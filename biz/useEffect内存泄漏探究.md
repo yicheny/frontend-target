@@ -282,3 +282,54 @@ cancel()
 至此，我们已经了解`axios`的手动取消机制了。
 
 # 项目中遇到的问题
+使用`doFetch`会出现内存泄漏的情况出现。
+
+目前情况麻烦在这个内存泄漏的报错很难复现，场景是这样的：刚开始的时候快速切换页面大概十次有一次会出现一次报错【切换成`slow 3G`报错概率会变高】，然后几次报错之后后续无论怎么操作都不会有相同报错出现，很奇怪。
+
+首先我认为应该要复现`bug`，两点：
+1. 放弃业务接口，自己写1个接口【模拟`pending`状态，方便自由控制】
+2. 无需页面，直接通过测试脚本控制组件卸载
+
+## 测试组件卸载
+
+
+## `usePost`源码
+```js
+export function usePost(url, params) {
+  const [status, setStatus] = useState({ data: null, loading: true, error: null })
+  const pre = useRef(status)
+  const cancel_ref = useRef(API.cancelTokenSource())
+  const update = useCallback(
+    (url, params) => {
+      const token = _.get(cancel_ref, 'current.token')
+      const s = pre.current
+      if (!s.loading) setStatus({ data: s.data, loading: true, error: s.error })
+      API.post(url, params, token)
+        .then((res) => {
+          setStatus({ data: res.data, loading: false, error: null })
+        })
+        .catch((err) => {
+          console.error(err)
+          setStatus({ data: null, loading: false, error: err })
+        })
+    },
+    [pre]
+  )
+
+  useEffect(() => {
+    pre.current = status
+  }, [status])
+
+  useEffect(() => {
+    if (_.isString(url)) update(url, params)
+    return () => {
+      if (cancel_ref.current) {
+        cancel_ref.current.cancel()
+        cancel_ref.current = null
+      }
+    }
+  }, [url, params, update])
+
+  return { ...status, doFetch: update }
+}
+```

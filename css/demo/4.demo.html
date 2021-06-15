@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>优先度测试</title>
+    <style>
+        /* 权重10，但是优先度更高 */
+        .text{
+            color:blue;
+        }
+
+        /* 权重12，但是优先度低，权重只能在相同级别进行比较 */
+        p,p,p,p,p,p,p,p,p,p,p,p{
+            color:red;
+        }
+    </style>
+</head>
+<body>
+    <p class="text">测试权重</p>
+</body>
+</html>
