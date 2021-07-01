@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网格布局 grid-template-areas</title>
+    <style>
+        .container {
+            width: 800px;
+            border: 2px solid #666;
+            display: grid;
+            grid-template-columns: repeat(2, 280px);
+            grid-template-rows:repeat(4,100px);
+            gap: 20px;
+            grid-template-areas:
+                'header header'
+                'content content'
+                'content content'
+                'footer1 footer2'
+        }
+
+        .item {
+            width: 100%;
+            height: 100px;
+            border-radius: 8px;
+            border: solid 2px rgb(255, 84, 104);
+            background: rgba(255, 84, 104, 0.3);
+        }
+
+        .header {
+            grid-area: header;
+        }
+
+        .content{
+            grid-area:content;
+            height:220px;
+        }
+
+        .footer1{
+            grid-area:footer1;
+        }
+
+        .footer2{
+            grid-area:footer2;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="item header">header</div>
+        <div class="item content">content</div>
+        <div class="item footer1">footer1</div>
+        <div class="item footer2">footer2</div>
+    </div>
+</body>
+
+</html>
