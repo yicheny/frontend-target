@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>定位 absolute</title>
+    <style>
+        /* body{
+            position:relative;
+        } */
+
+        .normal {
+            width: 300px;
+            height: 160px;
+            background: red;
+        }
+
+        .normal:nth-child(3){
+            background: burlywood;
+        }
+
+        .absolute {
+            position:absolute;
+            top:0;
+            left:0;
+            bottom:0;/*无效*/
+            right:0;/*无效*/
+            margin-top:40px;/*有效*/
+            
+            width: 80px;
+            height: 80px;
+            background: chartreuse;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="normal">normal1</div>
+    <div class="absolute">absoulte</div>
+    <div class="normal">normal2</div>
+</body>
+
+</html>
