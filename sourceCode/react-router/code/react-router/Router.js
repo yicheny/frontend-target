@@ -32,7 +32,7 @@ class Router extends React.Component {
         if (this._isMounted) {
           this.setState({ location });
 
-        //如果Router没有被加载，则将location设为_pendingLoaction，等Router加载结束后将其设置为最新的location
+        //如果Router没有被加载，则最新的location设为_pendingLocation，等Router加载结束后将其设置到state
         } else {
           this._pendingLocation = location;
         }

@@ -105,8 +105,8 @@ class Router extends React.Component {
 可以看到，`Router`提供了重要的上下文信息，分别说一下这些信息：
 - `history`：从`props`获取的，不需要说明
 - `location`：一般情况下是`props.history.location`，不过针对渲染的一些特殊情况做了`hack`处理，因为在`Router`加载之前，`location`可能已经变化了，所以需要监听`location`的变化：
-    - 如果`Router`已被加载，则使用最新的`location`
-    - 如果`Router`没有被加载，则将`location`设为`_pendingLoaction`，等加载结束后将其设置为最新的`location`
+    - 如果`Router`已被加载，则直接将最新的`location`设置到`state`
+    - 如果`Router`没有被加载，则最新的`location`设为`_pendingLocation`，等`Router`加载结束后将其设置到`state`
 - `match`：是一个对象，`{ path: "/", url: "/", params: {}, isExact: pathname === "/" }`
 - `staticContext`：使用`StaticRouter`才有的上下文信息
 
@@ -295,15 +295,143 @@ const history = {
 - `action` 
 - `location`
 
+关于`history`属性，这里重点说明下`location`属性。
+
+#### `location`
+核心源码如下【注：已省略无关代码】：
+```js
+function createHashHistory(props = {}) {
+  const { hashType = 'slash' } = props;
+  //将basename处理成标准格式
+  const basename = props.basename
+    ? stripTrailingSlash(addLeadingSlash(props.basename))
+    : '';
+
+  const { encodePath, decodePath } = HashPathCoders[hashType];
+
+  function getDOMLocation() {
+    //decode得到原有的path
+    let path = decodePath(getHashPath());
+
+    //warn警告...
+
+    //stripBasename: 如果path以basename开头，则返回basename后面的部分，否则返回path
+    if (basename) path = stripBasename(path, basename);
+
+    return createLocation(path);
+  }
+
+  // 在做其他任何事之前，保证hash被正确编码
+  const path = getHashPath();
+  const encodedPath = encodePath(path);
+
+  //将window.location.href的hash部分换为encodePath
+  if (path !== encodedPath) replaceHashPath(encodedPath);
+
+  const initialLocation = getDOMLocation();
+
+  const history = {
+    location: initialLocation,
+  };
+}
+```
+描述下代码思路：
+1. 得到标准格式的`basename`
+2. 得到`hashPath`
+3. 对`hashPath`进行`encode`【在做其他任何操作之前，需要先编码`hashPath`】
+4. 使用编码后的路径替换原有的`hashPath`
+5. 生成`initialLocation`
+   1. 解码得到原有`hashPath`【之前编码的路径在其他地方也有用处，所以需要编码和解码，而非直接使用】
+   2. 如果有`basename`，且`path`使用`basename`作为前缀，则以`basename`之后的字符串作为`path`
+   3. 根据`path`生成`createLocation`
+
+重点是这个`createLocation`方法
+
+##### `createLocation`
+`createLocation`是一个基础的工具方法，不仅在`getDOMLocation`里面使用了，还在`push`和`replace`这两个公共接口里使用了。
+
+根据传入参数的不同，`createLocation`的行为也有所差异，这里我省略无关部分，只描述`getDOMLocation`里面会执行到的代码。
+
+相关源码如下：
+```js
+function createLocation(path, state, key, currentLocation) {
+  let location;
+  if (typeof path === 'string') {
+    location = parsePath(path);
+    location.state = state;
+  } else {
+    //...
+  }
+
+  try {
+    location.pathname = decodeURI(location.pathname);
+  } catch (e) {
+    //警告和报错...
+  }
+
+  if (key) location.key = key;
+
+  if (currentLocation) {
+    //...
+  } else {
+    if (!location.pathname) {
+      location.pathname = '/';
+    }
+  }
+
+  return location;
+}
+```
+描述下这里相关代码的主要思路：
+1. 将`path`解析成对象并赋值给`location`
+2. `location.pathname = decodeURI(location.pathname);`【无需解释】
+3. 返回`location`
+
+我们再深入了解下细节，看看这里是怎么将`path`字符串解析的
+
+##### `parsePath`
+```js
+export function parsePath(path) {
+  let pathname = path || '/';
+  let search = '';
+  let hash = '';
+
+  const hashIndex = pathname.indexOf('#');
+  if (hashIndex !== -1) {
+    hash = pathname.substr(hashIndex);
+    pathname = pathname.substr(0, hashIndex);
+  }
+
+  const searchIndex = pathname.indexOf('?');
+  if (searchIndex !== -1) {
+    search = pathname.substr(searchIndex);
+    pathname = pathname.substr(0, searchIndex);
+  }
+
+  return {
+    pathname,
+    search: search === '?' ? '' : search,
+    hash: hash === '#' ? '' : hash
+  };
+}
+```
+关于`parsePath()`，需要了解以下内容：
+- 参数：一个`path`字符串
+- 返回值：一个对象，包含属性`pathname`、`search`、`hash`
+
+这里不再描述代码思路，因为这里写的很漂亮，代码干净利落，命名也很准确，完整看下来思路就出来了，再解释反而会丧失许多细节。
+
 ### `history`方法
 - `createHref`
 - `push`
 - `replace`
-- `go` 底层是`window.locatio.go`，不过在使用前做了可用性检查
+- `go` 底层是`window.location.go`，不过在使用前做了可用性检查
 - `goBack` 相当于`go(-1)`
 - `goForward` 相当于`go(1)`
 - `block`
 - `listen`
+
+接下来会依次描述`createHref`、`push`、`replace`、`block`、`listen`这几个公开接口。
 
 # 参考资料
 - [MDN-Location](https://developer.mozilla.org/zh-CN/docs/Web/API/Location)

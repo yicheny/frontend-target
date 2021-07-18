@@ -61,6 +61,7 @@ function createHashHistory(props = {}) {
     const canGoWithoutReload = supportsGoWithoutReloadUsingHash();
 
     const { getUserConfirmation = getConfirmation, hashType = 'slash' } = props;
+    //将basename处理成标准格式
     const basename = props.basename
         ? stripTrailingSlash(addLeadingSlash(props.basename)) //处理首尾的斜线
         : '';
@@ -68,10 +69,10 @@ function createHashHistory(props = {}) {
     const { encodePath, decodePath } = HashPathCoders[hashType];
 
     function getDOMLocation() {
+        //decode得到原有的path
         let path = decodePath(getHashPath());
 
         warning(
-            //没有basename或以basename开头
             !basename || hasBasename(path, basename),
             'You are attempting to use a basename on a page whose URL path does not begin ' +
             'with the basename. Expected path "' +
@@ -81,7 +82,7 @@ function createHashHistory(props = {}) {
             '".'
         );
 
-        //如果以basename开头，则返回basename后面的部分，否则返回path
+        //stripBasename: 如果path以basename开头，则返回basename后面的部分，否则返回path
         if (basename) path = stripBasename(path, basename);
 
         return createLocation(path);
@@ -168,6 +169,7 @@ function createHashHistory(props = {}) {
     const path = getHashPath();
     const encodedPath = encodePath(path);
 
+    //将window.location.href的hash部分换为encodePath
     if (path !== encodedPath) replaceHashPath(encodedPath);
 
     const initialLocation = getDOMLocation();
