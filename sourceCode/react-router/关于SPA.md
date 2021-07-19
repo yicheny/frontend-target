@@ -674,22 +674,26 @@ function replace(path, state) {
 
 #### `block`
 ```js
+let isBlocked = false;
+
 function block(prompt = false) {
-  const unblock = transitionManager.setPrompt(prompt);
+    //设置transitionManager的内部变量prompt，并返回一个类似prompt=null的清理方法
+    const unblock = transitionManager.setPrompt(prompt);
 
-  if (!isBlocked) {
-    checkDOMListeners(1);
-    isBlocked = true;
-  }
-
-  return () => {
-    if (isBlocked) {
-      isBlocked = false;
-      checkDOMListeners(-1);
+    if (!isBlocked) {
+        checkDOMListeners(1);
+        isBlocked = true;
     }
 
-    return unblock();
-  };
+    //用于清理的方法
+    return () => {
+        if (isBlocked) {
+            isBlocked = false;
+            checkDOMListeners(-1);
+        }
+
+        return unblock();
+    };
 }
 ```
 
