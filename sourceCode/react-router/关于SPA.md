@@ -433,8 +433,271 @@ export function parsePath(path) {
 
 接下来会依次描述`createHref`、`push`、`replace`、`block`、`listen`这几个公开接口。
 
-# 参考资料
-- [MDN-Location](https://developer.mozilla.org/zh-CN/docs/Web/API/Location)
-- [path-to-regexp](https://github.com/pillarjs/path-to-regexp)
+#### `createHref`
+作用是将`location`还原成`path`【如果有`basename`，会将`basename`也加上】。
+
+源码：
+```js
+function createHref(location) {
+    return '#' + encodePath(basename + createPath(location));
+}
+```
+
+这里我以官方测试库的一个单元测试为例说明用法：
+```js
+describe('with a bad basename', () => {
+    let history;
+    beforeEach(() => {
+      history = createBrowserHistory({ basename: '/the/bad/base/' });
+    });
+
+    it('knows how to create hrefs', () => {
+      const href = history.createHref({
+        pathname: '/the/path',
+        search: '?the=query',
+        hash: '#the-hash'
+      });
+
+      expect(href).toEqual('/the/bad/base/the/path?the=query#the-hash');
+});
+```
+
+#### `push`
+相关源码：
+```js
+function push(path, state) {
+    warning(
+        state === undefined,
+        'Hash history cannot push state; it is ignored'
+    );
+
+    const action = 'PUSH';
+    const location = createLocation(
+        path,
+        undefined,
+        undefined,
+        history.location
+    );
+
+    transitionManager.confirmTransitionTo(
+        location,
+        action,
+        getUserConfirmation,
+        ok => {
+            //这部分会在下面描述...
+        }
+    );
+}
+```
+描述下思路：
+1. 将`action`改为`push`
+2. 根据`path`和`history.location`生成新的`location`
+3. 调用`transitionManager.confirmTransitionTo(location,action,getUserConfirmation,callback)`
+
+现在这里有两个重要的点，一个是`transitionManager`，一个是`callback`【就是`ok => ...`这个回调函数】
+
+##### `createTransitionManager`
+`transitionManager`是通过`createTransitionManager`创建的。
+
+关于`transitionManager.confirmTransitionTo()`，对于有没有`promat`处理上是不同的，这里我先说一下没有`promat`的情况。
+
+相关源码：
+```js
+function createTransitionManager() {
+    let prompt = null;
+
+    //...
+
+    function confirmTransitionTo(
+        location,
+        action,
+        getUserConfirmation,
+        callback
+    ) {
+        if (prompt != null) {
+            //... prompt可以被setPrompt方法修改，history.block里面调用了setPrompt
+        } else {
+            callback(true);
+        }
+    }
+
+    //...
+
+    return {
+        confirmTransitionTo,
+        //...
+    };
+}
+```
+很直接，调用`callback(true)`
+
+现在让我们回到`ok => ...`这个回调：
+```js
+ok => {
+    if (!ok) return;
+    const path = createPath(location);
+    const encodedPath = encodePath(basename + path);
+    //getHashPath会获得最新的hash，而encodePath是根据history.location生成的hash
+    const hashChanged = getHashPath() !== encodedPath;
+
+    if (hashChanged) {
+        ignorePath = path;//在handleHashChange()方法会用到
+        pushHashPath(encodedPath);//window.location.hash = path;
+
+        const prevIndex = allPaths.lastIndexOf(createPath(history.location));
+        const nextPaths = allPaths.slice(
+            0,
+            prevIndex === -1 ? 0 : prevIndex + 1
+        );
+
+        nextPaths.push(path);
+        allPaths = nextPaths;
+
+        setState({ action, location });
+    } else {
+        warning(
+            false,
+            'Hash history cannot PUSH the same path; a new entry will not be added to the history stack'
+        );
+
+        setState();
+    }
+}
+```
+描述下思路：
+1. 根据`history.location`经过一系列处理得到`encodePath`
+2. 获取当前最新的`hashPath`和`encodePath`进行对比
+3. 如果发现`hashPath`改变了，则进行一系列相关状态的更新，调用`setState`
+
+继续去看一下`setState`：
+```js
+function setState(nextState) {
+  Object.assign(history, nextState);
+  history.length = globalHistory.length;
+  transitionManager.notifyListeners(history.location, history.action);
+}
+```
+主要做了两件事：
+1. 更新`history`属性
+2. 触发发布事件【这个发布订阅会在描述`listen`方法时说明，这里暂不深入】
+
+现在回过去，看一下`prompt`不为`null`时怎么处理：
+```js
+function confirmTransitionTo(
+    location,
+    action,
+    getUserConfirmation,
+    callback
+) {
+    if (prompt != null) {
+        const result =
+        typeof prompt === 'function' ? prompt(location, action) : prompt;
+
+      if (typeof result === 'string') {
+        if (typeof getUserConfirmation === 'function') {
+          getUserConfirmation(result, callback);
+        } else {
+          warning(
+            false,
+            'A history needs a getUserConfirmation function in order to use a prompt message'
+          );
+
+          callback(true);
+        }
+      } else {
+        // 取消转换
+        callback(result !== false);
+      }
+    } else {
+        callback(true);//prompt为null时
+    }
+}
+```
+描述一下思路：
+
+异常分支这里不做说明了，理想场景下`result`是字符串，`getUserConfirmation`是函数，此时执行`getUserConfirmation(result, callback);`
+
+`result`和`getUserConfirmation`的源头分别在哪里？
+
+首先是`result`，它的来源是`prompt`，`prompt`的修改来源是`history.block`，通过参数传入，稍微值得注意的是，`prompt`也可以是函数类型。
+
+然后`getUserConfirmation`，它的源头是`createHashHistory(props)`的参数`props.getUserConfirmation`，如果没传，则默认是下面这个方法：
+```js
+export function getConfirmation(message, callback) {
+  callback(window.confirm(message)); // eslint-disable-line no-alert
+}
+```
+
+#### `replace`
+```js
+function replace(path, state) {
+  warning(
+    state === undefined,
+    'Hash history cannot replace state; it is ignored'
+  );
+
+  const action = 'REPLACE';
+  const location = createLocation(
+    path,
+    undefined,
+    undefined,
+    history.location
+  );
+
+  transitionManager.confirmTransitionTo(
+    location,
+    action,
+    getUserConfirmation,
+    ok => {
+      if (!ok) return;
+
+      const path = createPath(location);
+      const encodedPath = encodePath(basename + path);
+      const hashChanged = getHashPath() !== encodedPath;
+
+      if (hashChanged) {
+        ignorePath = path;
+        //调用了window.location.replace，以给定的URL替换当前资源，特点是当前页面不会保存到会话历史中，这样用户点击回退不会回到该页面。
+        replaceHashPath(encodedPath);
+      }
+
+      const prevIndex = allPaths.indexOf(createPath(history.location));
+
+      if (prevIndex !== -1) allPaths[prevIndex] = path;
+
+      setState({ action, location });
+    }
+  );
+}
+```
+重复部分不再说明，我们重点关注下`()=>...`部分，这部分代码跟`push`也差不太多，这里是直接将路径换掉了【在`window.location`和`allPaths`中】。
+
+#### `block`
+```js
+function block(prompt = false) {
+  const unblock = transitionManager.setPrompt(prompt);
+
+  if (!isBlocked) {
+    checkDOMListeners(1);
+    isBlocked = true;
+  }
+
+  return () => {
+    if (isBlocked) {
+      isBlocked = false;
+      checkDOMListeners(-1);
+    }
+
+    return unblock();
+  };
+}
+```
+
+#### `listen`
+
+# 相关资料
 - [react-router v5.2.0](https://github.com/ReactTraining/react-router/tree/v5.2.0)
 - [history v4.9.0](https://github.com/ReactTraining/history/tree/v4.9.0)
+- [path-to-regexp](https://github.com/pillarjs/path-to-regexp)
+- [MDN-Location](https://developer.mozilla.org/zh-CN/docs/Web/API/Location)
+- [MDN-window.confim](https://developer.mozilla.org/zh-CN/docs/Web/API/Window/confirm)

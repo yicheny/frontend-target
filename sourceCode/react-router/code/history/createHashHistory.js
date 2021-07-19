@@ -207,9 +207,9 @@ function createHashHistory(props = {}) {
                 const hashChanged = getHashPath() !== encodedPath;
 
                 if (hashChanged) {
-                    // We cannot tell if a hashchange was caused by a PUSH, so we'd
-                    // rather setState here and ignore the hashchange. The caveat here
-                    // is that other hash histories in the page will consider it a POP.
+                    //我们无法判断哈希更改是否是由 PUSH 引起的，
+                    //因此我们宁愿在此处设置状态并忽略哈希更改。 
+                    //这里需要注意的是，页面中的其他哈希历史会将其视为 POP。
                     ignorePath = path;
                     pushHashPath(encodedPath);
 
@@ -265,6 +265,7 @@ function createHashHistory(props = {}) {
                     // rather setState here and ignore the hashchange. The caveat here
                     // is that other hash histories in the page will consider it a POP.
                     ignorePath = path;
+                    //调用了window.location.replace，以给定的URL替换当前资源，特点是当前页面不会保存到会话历史中，这样用户点击回退不会回到该页面。
                     replaceHashPath(encodedPath);
                 }
 
