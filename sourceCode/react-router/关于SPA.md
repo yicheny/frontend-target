@@ -291,9 +291,9 @@ const history = {
 
 ### `history`属性
 首先说`history`的属性部分
-- `length` 其实就是`window.history.length`
-- `action` 
-- `location`
+- `length` 其实就是`window.history.length`，历史堆栈中的条目数
+- `action` 当前导航操作
+- `location` 当前位置
 
 关于`history`属性，这里重点说明下`location`属性。
 
@@ -436,14 +436,7 @@ export function parsePath(path) {
 #### `createHref`
 作用是将`location`还原成`path`【如果有`basename`，会将`basename`也加上】。
 
-源码：
-```js
-function createHref(location) {
-    return '#' + encodePath(basename + createPath(location));
-}
-```
-
-这里我以官方测试库的一个单元测试为例说明用法：
+这里我以一个官方测试案例演示用法：
 ```js
 describe('with a bad basename', () => {
     let history;
@@ -460,6 +453,13 @@ describe('with a bad basename', () => {
 
       expect(href).toEqual('/the/bad/base/the/path?the=query#the-hash');
 });
+```
+
+源码：
+```js
+function createHref(location) {
+    return '#' + encodePath(basename + createPath(location));
+}
 ```
 
 #### `push`
@@ -490,7 +490,7 @@ function push(path, state) {
 }
 ```
 描述下思路：
-1. 将`action`改为`push`
+1. 设置`action`为`PUSH`
 2. 根据`path`和`history.location`生成新的`location`
 3. 调用`transitionManager.confirmTransitionTo(location,action,getUserConfirmation,callback)`
 
@@ -541,7 +541,14 @@ ok => {
     const hashChanged = getHashPath() !== encodedPath;
 
     if (hashChanged) {
-        ignorePath = path;//在handleHashChange()方法会用到
+        //通过history的公开接口push/replace更改路径，会主动设置相应的action【PUSH/REPLACE】
+        //无论任何原因导致路径更改，都会触发hashChange事件，从而执行handleHashChange()方法
+        //此时，如果不是通过`history`公开接口修改的路径，action都会被标志为`POP`【及其他一系列操作】
+        //如果是`push/replace`设置的路径，则不需要这一系列处理
+        //那么如何判定这个路径是通过`push/replace`修改的？
+        //ignorePath是在push/replace中进行设置的，如果ignorePath存在且与当前路径一致，
+        //那么就认为这个路径是通过push / replace修改的，不用再做处理
+        ignorePath = path;
         pushHashPath(encodedPath);//window.location.hash = path;
 
         const prevIndex = allPaths.lastIndexOf(createPath(history.location));
@@ -619,7 +626,7 @@ function confirmTransitionTo(
 
 `result`和`getUserConfirmation`的源头分别在哪里？
 
-首先是`result`，它的来源是`prompt`，`prompt`的修改来源是`history.block`，通过参数传入，稍微值得注意的是，`prompt`也可以是函数类型。
+首先是`result`，它的来源是`prompt`，`prompt`的来源是`history.block(prompt)`，通过参数传入，稍微值得注意的是，`prompt`也可以是函数类型。
 
 然后`getUserConfirmation`，它的源头是`createHashHistory(props)`的参数`props.getUserConfirmation`，如果没传，则默认是下面这个方法：
 ```js
@@ -673,6 +680,26 @@ function replace(path, state) {
 重复部分不再说明，我们重点关注下`()=>...`部分，这部分代码跟`push`也差不太多，这里是直接将路径换掉了【在`window.location`和`allPaths`中】。
 
 #### `block`
+通过`block`可以注册一条提示消息，该消息将在通知`location listeners`之前向用户显示。这样可以确保用户在确认之前不能直接离开页面。
+- 参数：`prompt`
+  - `string`类型，提示文案
+  - `function`类型，返回结果是提示文案，可执行一些副作用
+- 返回值：`function`类型，一个用于清理的方法
+
+用法示例：
+```js
+//冻结
+const unblock = history.block('您确定要离开此页面吗？');
+
+//或者可以这么冻结
+history.block((location, action) => {
+  if (input.value !== '') return '您确定要离开此页面吗？';
+});
+
+unblock();
+```
+
+相关源码：
 ```js
 let isBlocked = false;
 
@@ -696,8 +723,131 @@ function block(prompt = false) {
     };
 }
 ```
+关键思路描述：
+- 设置`prompt`
+- 看是否已经有页面被冻结了【以保证只能冻结一个页面】  
+  - 如果是则执行`checkDOMListeners`【用于监听`hashChange`事件】
+
+##### `checkDOMListeners`
+简单说一下`checkDOMListeners`，执行这个方法，是用于添加`hashChange`事件监听，无论有多少需要监听的地方【`block`和`listen`都会执行这个方法】，这个监听只需要添加一次。【在第一次的时候进行添加】
+
+而如果所有与监听相关的方法都被清理了，当`listenerCount`变为0的时候，移除`hashChange`的监听。
+
+`checkDOMListeners`相关源码：
+```js
+function checkDOMListeners(delta) {
+  listenerCount += delta;
+
+  if (listenerCount === 1 && delta === 1) {
+    window.addEventListener(HashChangeEvent, handleHashChange);
+  } else if (listenerCount === 0) {
+    window.removeEventListener(HashChangeEvent, handleHashChange);
+  }
+}
+```
+
+##### `handleHashChange`
+`history`的`action`分为三种：`PUSH`、`REPLACE`、`POP`，我们知道通过`history.push`修改`location`动作是`PUSH`、通过`history.replace`修改`location`动作是`REPLACE`，那么什么情况下修改`location`动作会是`POP`呢？
+
+答案是除了`history.push`和`history.replace`之外的其他任何方式导致路由修改，都会将其记录成`POP`。
+
+相关源码：
+```js
+function handleHashChange() {
+    const path = getHashPath();
+    const encodedPath = encodePath(path);
+
+    if (path !== encodedPath) {
+        // 做其他任何事之前先保证hash路径的正确
+        // replaceHashPath之后会再触发hashChange事件
+        replaceHashPath(encodedPath);
+    } else {
+        const location = getDOMLocation();
+        const prevLocation = history.location;
+
+        //仅当confirmTransitionTo转换不通过，执行恢复页面操作
+        //如果想要返回的location在当前location的历史堆栈之前，则执行返回操作，此时会将其设置为true
+        //forceNextPop为true仅当action为POP时会执行一次setState()
+        //locationsAreEqual检查上一次位置和当前位置是否相同【pathname、search、hash、key、state】
+        if (!forceNextPop && locationsAreEqual(prevLocation, location)) return; // A hashchange doesn't always == location change.
+
+        //说明当前路径是通过push/replace设置的，不用再往下走
+        if (ignorePath === createPath(location)) return; // Ignore this change; we already setState in push/replace.
+
+        ignorePath = null;
+
+        handlePop(location);
+    }
+}
+
+function handlePop(location) {
+    if (forceNextPop) {
+        forceNextPop = false;
+        setState();
+    } else {
+        const action = 'POP';
+
+        transitionManager.confirmTransitionTo(
+            location,
+            action,
+            getUserConfirmation,
+            ok => {
+                if (ok) {//通过，则直接转换
+                    setState({ action, location });
+                } else {//未通过，则恢复
+                    revertPop(location);
+                }
+            }
+        );
+    }
+}
+
+function revertPop(fromLocation) {
+    const toLocation = history.location;
+
+    //想要跳转的location【history.location】的index
+    let toIndex = allPaths.lastIndexOf(createPath(toLocation));
+
+    if (toIndex === -1) toIndex = 0;
+
+    //源头是getHashPath()，这是导航当前的location
+    let fromIndex = allPaths.lastIndexOf(createPath(fromLocation));
+
+    if (fromIndex === -1) fromIndex = 0;
+
+    const delta = toIndex - fromIndex;
+
+    //如果想要返回的location在当前location的历史堆栈之前，则执行返回操作
+    if (delta) {
+        forceNextPop = true;
+        go(delta);
+    }
+}
+```
 
 #### `listen`
+相关源码：
+```js
+function listen(listener) {
+  const unlisten = transitionManager.appendListener(listener);
+  checkDOMListeners(1);
+
+  return () => {
+    checkDOMListeners(-1);
+    unlisten();
+  };
+}
+```
+思路描述：
+1. 通过`transitionManager.appendListener(listener)`添加监听回调
+2. 执行`checkDOMListeners`【详见上文描述】
+3. 返回一个清理方法
+
+这里其实是一个发布-订阅模式，每一个监听器`listener`都是订阅者，通过`transitionManager.appendListener(listener);`添加订阅
+
+而每次`setState`都会触发发布，通过`transitionManager.notifyListeners(history.location, history.action);`进行发布
+
+什么时候会执行`setState`？执行`PUSH`、`REPLACE`、`POP`操作时，可以简单认为当前位置改变时会通知所有监听者。
 
 # 相关资料
 - [react-router v5.2.0](https://github.com/ReactTraining/react-router/tree/v5.2.0)

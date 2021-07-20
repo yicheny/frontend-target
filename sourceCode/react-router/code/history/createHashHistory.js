@@ -104,14 +104,20 @@ function createHashHistory(props = {}) {
         const encodedPath = encodePath(path);
 
         if (path !== encodedPath) {
-            // Ensure we always have a properly-encoded hash.
+            // 做其他任何事之前先保证hash路径的正确
+            // replaceHashPath之后会再触发hashChange事件
             replaceHashPath(encodedPath);
         } else {
             const location = getDOMLocation();
             const prevLocation = history.location;
 
+            //仅当confirmTransitionTo转换不通过，执行恢复页面操作
+            //如果想要返回的location在当前location的历史堆栈之前，则执行返回操作，此时会将其设置为true
+            //forceNextPop为true仅当action为POP时会执行一次setState()
+            //locationsAreEqual检查上一次位置和当前位置是否相同【pathname、search、hash、key、state】
             if (!forceNextPop && locationsAreEqual(prevLocation, location)) return; // A hashchange doesn't always == location change.
 
+            //说明当前路径是通过push/replace设置的，不用再往下走
             if (ignorePath === createPath(location)) return; // Ignore this change; we already setState in push/replace.
 
             ignorePath = null;
@@ -132,9 +138,9 @@ function createHashHistory(props = {}) {
                 action,
                 getUserConfirmation,
                 ok => {
-                    if (ok) {
+                    if (ok) {//通过，则直接转换
                         setState({ action, location });
-                    } else {
+                    } else {//未通过，则恢复
                         revertPop(location);
                     }
                 }
@@ -149,16 +155,19 @@ function createHashHistory(props = {}) {
         // keeping a list of paths we've seen in sessionStorage.
         // Instead, we just default to 0 for paths we don't know.
 
+        //想要跳转的location【history.location】的index
         let toIndex = allPaths.lastIndexOf(createPath(toLocation));
 
         if (toIndex === -1) toIndex = 0;
 
+        //源头是getHashPath()，这是导航当前的location
         let fromIndex = allPaths.lastIndexOf(createPath(fromLocation));
 
         if (fromIndex === -1) fromIndex = 0;
 
         const delta = toIndex - fromIndex;
 
+        //如果想要返回的location在当前location的历史堆栈之前，则执行返回操作
         if (delta) {
             forceNextPop = true;
             go(delta);
@@ -207,9 +216,13 @@ function createHashHistory(props = {}) {
                 const hashChanged = getHashPath() !== encodedPath;
 
                 if (hashChanged) {
-                    //我们无法判断哈希更改是否是由 PUSH 引起的，
-                    //因此我们宁愿在此处设置状态并忽略哈希更改。 
-                    //这里需要注意的是，页面中的其他哈希历史会将其视为 POP。
+                    //通过history的公开接口push/replace更改路径，会主动设置相应的action【PUSH/REPLACE】
+                    //无论任何原因导致路径更改，都会触发hashChange事件，从而执行handleHashChange()方法
+                    //此时，如果不是通过`history`公开接口修改的路径，action都会被标志为`POP`【及其他一系列操作】
+                    //如果是`push/replace`设置的路径，则不需要这一系列处理
+                    //那么如何判定这个路径是通过`push/replace`修改的？
+                    //ignorePath是在push/replace中进行设置的，如果ignorePath存在且与当前路径一致，
+                    //那么就认为这个路径是通过push / replace修改的，不用再做处理
                     ignorePath = path;
                     pushHashPath(encodedPath);
 
