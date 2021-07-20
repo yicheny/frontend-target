@@ -6,12 +6,12 @@
 
 另一方面，切换页面时，有些组件时可以复用的，可以只切换需要替换的组件，同样也提升了渲染的效率。
 
-比如说：
-//这里需要一张示意图
+页面渲染效果是这样的：
+![示意图](https://blog.pusher.com/wp-content/uploads/2017/12/getting-started-react-router-v4-app-preview-2.gif)
 
 想要实现这种效果，需要一套路由系统，这个路由主要做的事情就是：
-1. 监听url变化
-2. 根据url变化匹配到对应的Route，渲染对应Route上的组件
+1. 监听`url`变化
+2. 根据`url`变化匹配到对应的`Route`，渲染对应`Route`上的组件
 
 我以`react-router-dom`库为例，说明下大致的的做法。
 
@@ -38,8 +38,6 @@
     </Switch>
 </HashRouter>
 ```
-实际运行结果如下：
-//需要一张切换页面的gif图
 
 让我们看一下这段代码做了什么
 - `HashRouter` 提供上下文信息，监听`location`变化
@@ -109,6 +107,10 @@ class Router extends React.Component {
     - 如果`Router`没有被加载，则最新的`location`设为`_pendingLocation`，等`Router`加载结束后将其设置到`state`
 - `match`：是一个对象，`{ path: "/", url: "/", params: {}, isExact: pathname === "/" }`
 - `staticContext`：使用`StaticRouter`才有的上下文信息
+
+除此之外，这里还有`HistoryContext`，作用只有一个：提供`history`信息。
+
+`History`在整个`JSX`结构中有且只有一个，只用于提供`history`，而`RouterContext`并不只有`Router`会提供，每个`Route`也会提供`RouterContext`，主要是因为每个上下文提供的`match`是不同的，`match`为什么会不同？下面会进行描述。
 
 ### `Switch`
 从源码里可以看到Switch主要任务就是匹配子项的`path`，并根据其生成`match`，然后将其传递给子项。
@@ -849,6 +851,13 @@ function listen(listener) {
 
 什么时候会执行`setState`？执行`PUSH`、`REPLACE`、`POP`操作时，可以简单认为当前位置改变时会通知所有监听者。
 
+# 更多用法
+## `hisotry`
+`history`提供了三种方法来创建`history`：
+- `createBrowerHistorty` 用于支持 `HTML5 history API` 的现代 `Web` 浏览器
+- `createMemoryHistory` 用于参考实现，也可用于非 `DOM` 环境，如 `React Native` 或测试
+- `createHashHistory` 用于旧版网络浏览器
+ 
 # 相关资料
 - [react-router v5.2.0](https://github.com/ReactTraining/react-router/tree/v5.2.0)
 - [history v4.9.0](https://github.com/ReactTraining/history/tree/v4.9.0)
