@@ -852,15 +852,29 @@ function listen(listener) {
 什么时候会执行`setState`？执行`PUSH`、`REPLACE`、`POP`操作时，可以简单认为当前位置改变时会通知所有监听者。
 
 # 更多用法
-## `hisotry`
+## `history`
 `history`提供了三种方法来创建`history`：
-- `createBrowerHistorty` 用于支持 `HTML5 history API` 的现代 `Web` 浏览器
+- `createBrowserHistory` 用于支持 `HTML5 history API` 的现代 `Web` 浏览器
 - `createMemoryHistory` 用于参考实现，也可用于非 `DOM` 环境，如 `React Native` 或测试
 - `createHashHistory` 用于旧版网络浏览器
+
+### `createBrowserHistory`
+`createBrowserHistory`和`createHashHistory`最主要的区别在于，`createBrowserHistory`底层使用了`History`，这个是`HTML5`的原生`API`。
+
+它有一个状态概念，按指定的名称和`URL`（如果提供该参数）将数据放进会话历史栈，数据被DOM进行不透明处理，开发者可以指定任何可以被序列化的`javascript`对象。
+
+> 序列化使用的是[结构化克隆算法](https://developer.mozilla.org/zh-CN/docs/Web/API/Web_Workers_API/Structured_clone_algorithm)
+
+`createBrowserHistory`说一下实现上的主要区别：
+> 这里做了一些兼容处理，如果不支持`History`，则会使用`hash`
+- `push`底层调用的是`window.history.pushState`
+- `replace`底层调用的是`window.history.replaceState`
+- 监听的事件是`popstate`
  
 # 相关资料
 - [react-router v5.2.0](https://github.com/ReactTraining/react-router/tree/v5.2.0)
 - [history v4.9.0](https://github.com/ReactTraining/history/tree/v4.9.0)
 - [path-to-regexp](https://github.com/pillarjs/path-to-regexp)
 - [MDN-Location](https://developer.mozilla.org/zh-CN/docs/Web/API/Location)
-- [MDN-window.confim](https://developer.mozilla.org/zh-CN/docs/Web/API/Window/confirm)
+- [MDN-window.confirm](https://developer.mozilla.org/zh-CN/docs/Web/API/Window/confirm)
+- [MDN-History](https://developer.mozilla.org/zh-CN/docs/Web/API/History)
