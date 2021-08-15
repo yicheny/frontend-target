@@ -851,7 +851,7 @@ function listen(listener) {
 
 什么时候会执行`setState`？执行`PUSH`、`REPLACE`、`POP`操作时，可以简单认为当前位置改变时会通知所有监听者。
 
-# 更多用法
+# 更多内容
 ## `history`
 `history`提供了三种方法来创建`history`：
 - `createBrowserHistory` 用于支持 `HTML5 history API` 的现代 `Web` 浏览器
@@ -859,18 +859,70 @@ function listen(listener) {
 - `createHashHistory` 用于旧版网络浏览器
 
 ### `createBrowserHistory`
-`createBrowserHistory`和`createHashHistory`最主要的区别在于，`createBrowserHistory`底层使用了`History`，这个是`HTML5`的原生`API`。
+#### 与`createHashHistory`的区别
+`createBrowserHistory`和`createHashHistory`最主要的区别在于，`createHashHistory`底层路由的变换操作是通过`window.location.hash`来实现的，而`createBrowserHistory`则使用了`HTML5`中`state`的概念。
 
-它有一个状态概念，按指定的名称和`URL`（如果提供该参数）将数据放进会话历史栈，数据被DOM进行不透明处理，开发者可以指定任何可以被序列化的`javascript`对象。
+首先为什么`createHashHistory`选择了操作`hash`进行路由切换？
+
+这个选择和`SPA`的需求相关，单页面可以通俗理解为整个应用过程中只请求了一次`html`文档。之后每次切换页面，实际上都是`js`脚本通过数据动态创建`HTML`元素进行渲染的。
+
+在`HTML5`之前，想要实现切换路由不进行`html`文档请求，就需要基于`hash`来达到这一目的。
+
+举例说明下`hash`的特性，如果是静态`html`文档，切换`hash`进行前进后退操作，可以发现页面是没有任何变化的。对于`SPA`应用来说，我们使用`hash`切换路由的目的主要是请求相应的数据，并结合`js`动态生成页面，而无需请求新的`html`文档。
+
+另外，值得一提的是，在`Html5`之前的时代，就已经有`history`这个API了，不过在当时是不能操作历史记录的内容的，它存在的意义是提供了对浏览器会话历史的访问，而在`HTML5`，`history`的能力得到了极大的加强。
+
+我以`Html5`之前和之后两个时期，分别来说明下`History`提供的`API`。
+
+`H5`之前的API：
+- 属性
+  - `length`
+- 方法
+  - `back`
+  - `forward`
+  - `go`
+
+`H5`新增API：
+- 属性
+  - `state`
+  - `scrollRestoration`【实验】 允许Web应用程序在历史导航上显式地设置默认滚动恢复行为。此属性可以是自动的（auto）或者手动的（manual）
+- 方法
+  - `pushState`
+  - `replaceState`
+
+通常来说，我们可以认为从`H5`开始允许我们操作`hisotry`中的内容了。
+
+##### 关于`history.state`
+`history.state`访问得到的最新的历史状态【或者说是历史会话状态堆栈最底层的数据】，通过`pushState()`和`replaceState()`改变`state`，如果没有调用这两个方法，那么默认得到的会是`null`
+
+###### 作用
+改变`state`可以改变`referrer`，它在用户发送`XMLHTTPRequest`请求时在`HTTP`头部使用，`referrer`是用于标识创建`XMLHttpRequest`对象时`this`所代表的`window`对象中`document`的`URL`
+
+###### `popstate`
+与`state`联系紧密的事件是`popstate`，这个事件会在浏览器的一些行为下被触发，比如点击前进、后退按钮，比如调用`history.back`、`history.go`、`history.foward`，比如`a`标签的锚点这些也会触发。
+
+另外，在网页加载时，不同浏览器对于`popstate`是否触发有不同表现，`chrome`和`safari`会触发，而`firefox`不会。
+> 注意：调用`pushState`和`replaceState`不会触发这个事件。
+
+##### `pushState`的优点
+1. 新的`URL`只需要和当前同源，而`hash`操作则必须要保证`hash`之前的`url`相同，才能得到相同的`document`
+1. 创建新的历史记录项可以不改变当前的`url`，如果是`hash`操作则要求新的`hash`和旧的不同才能创建历史记录项。
+1. 可以将任意数据和历史记录项相关联，而基于`hash`则需要将数据编码成字符
+
+##### `pushState`注意点
+1. 通过`pushState()`不会触发`hashChange`，即使新旧`url`的哈希不同
+1. 刚开始保存数据的方案是`json`序列化，之后改良的方案是使用结构化克隆算法。
+1. 使用状态保存的数据不能大于640，如果需要更大的空间，建议使用`localStorage`或`sessionStorage`
 
 > 序列化使用的是[结构化克隆算法](https://developer.mozilla.org/zh-CN/docs/Web/API/Web_Workers_API/Structured_clone_algorithm)
 
+#### 具体实现 
 `createBrowserHistory`说一下实现上的主要区别：
 > 这里做了一些兼容处理，如果不支持`History`，则会使用`hash`
 - `push`底层调用的是`window.history.pushState`
 - `replace`底层调用的是`window.history.replaceState`
 - 监听的事件是`popstate`
- 
+
 # 相关资料
 - [react-router v5.2.0](https://github.com/ReactTraining/react-router/tree/v5.2.0)
 - [history v4.9.0](https://github.com/ReactTraining/history/tree/v4.9.0)
@@ -878,3 +930,6 @@ function listen(listener) {
 - [MDN-Location](https://developer.mozilla.org/zh-CN/docs/Web/API/Location)
 - [MDN-window.confirm](https://developer.mozilla.org/zh-CN/docs/Web/API/Window/confirm)
 - [MDN-History](https://developer.mozilla.org/zh-CN/docs/Web/API/History)
+- [MDN-WebExtensions History](https://developer.mozilla.org/zh-CN/docs/Mozilla/Add-ons/WebExtensions/API/history)
+- [segmentfault JSON序列化与结构化克隆算法](https://segmentfault.com/a/1190000013139328)
+- [history.state的来源](http://diveintohtml5.info/history.html)
