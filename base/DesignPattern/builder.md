@@ -1,0 +1,10 @@
+[TOC]
+
+# 意图
+将一个复杂对象的创建和表示分离，使得同样的构建过程可以创建不同的表示
+
+```plantuml
+@startuml
+alice->bob:hello
+@enduml
+```
