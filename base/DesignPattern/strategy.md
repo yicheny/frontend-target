@@ -70,7 +70,7 @@ public class GreenDuck extends Duck{
 
 我：”厉害呀，不愧是你，竟然可以想出这么专业的功能，牛逼👍！“
 
-![NB](https://img95.699pic.com/element/40124/7317.png_860.png)
+![厉害呀](https://img95.699pic.com/element/40124/7317.png_860.png)
 
 问题不大，之前已经抽离了重复，虽然鸭子种类挺多，但是只需要在公共类`Duck`里添加飞行功能，所有鸭子都可以飞了。
 
