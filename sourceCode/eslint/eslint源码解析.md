@@ -278,7 +278,7 @@ class CLIEngine{
 可以看到`lint`是通过`verifyText`处理的，这个方法底层使用的是`linter.verifyAndFix`，我们直接看`linter.verifyAndFix`方法
 
 # `linter/linter.js`
-## `verifyAndFix`
+## `linter.verifyAndFix`
 ```js
 class Linter{
     /**
@@ -352,6 +352,10 @@ class Linter{
     }
 }
 ```
+
+## `SourceCodeFixer.applyFixes`
+
+## `linter.verify`
 
 # 问题
 1. 测试无法运行
