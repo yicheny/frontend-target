@@ -189,24 +189,14 @@ class CLIEngine{
         const results = [];
         const startTime = Date.now();
 
-        // Clear the last used config arrays.
+        // 清除上次使用的配置数组。
         lastConfigArrays.length = 0;
 
-        // Delete cache file; should this do here?
         if (!cache) {
-            try {
-                fs.unlinkSync(cacheFilePath);
-            } catch (error) {
-                const errorCode = error && error.code;
-
-                // Ignore errors when no such file exists or file system is read only (and cache file does not exist)
-                if (errorCode !== "ENOENT" && !(errorCode === "EROFS" && !fs.existsSync(cacheFilePath))) {
-                    throw error;
-                }
-            }
+            //...删除缓存文件
         }
 
-        // Iterate source code files.
+        // 迭代源代码文件
         for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
             if (ignored) {
                 results.push(createIgnoreResult(filePath, cwd));
@@ -215,15 +205,15 @@ class CLIEngine{
 
             /*
              * Store used configs for:
-             * - this method uses to collect used deprecated rules.
-             * - `getRules()` method uses to collect all loaded rules.
-             * - `--fix-type` option uses to get the loaded rule's meta data.
+             * - 此方法用于收集已使用的已弃用规则
+             * - `getRules()` 方法用于收集所有加载的规则
+             * - `--fix-type` 选项用于获取加载规则的元数据
              */
             if (!lastConfigArrays.includes(config)) {
                 lastConfigArrays.push(config);
             }
 
-            // Skip if there is cached result.
+            // 如果有缓存结果则跳过
             if (lintResultCache) {
                 const cachedResult =
                     lintResultCache.getCachedLintResults(filePath, config);
@@ -245,31 +235,21 @@ class CLIEngine{
 
             // Do lint.
             const result = verifyText({
-                text: fs.readFileSync(filePath, "utf8"),
-                filePath,
-                config,
-                cwd,
-                fix,
-                allowInlineConfig,
-                reportUnusedDisableDirectives,
-                fileEnumerator,
-                linter
+                //...一系列参数
             });
 
             results.push(result);
 
             /*
-             * Store the lint result in the LintResultCache.
-             * NOTE: The LintResultCache will remove the file source and any
-             * other properties that are difficult to serialize, and will
-             * hydrate those properties back in on future lint runs.
+             * 将 lint 结果存储在 LintResultCache 中。
+             * 注意：LintResultCache 将删除文件源和任何其他难以序列化的属性，并将在以后的 lint 运行中重新吸收这些属性。
              */
             if (lintResultCache) {
                 lintResultCache.setCachedLintResults(filePath, config, result);
             }
         }
 
-        // Persist the cache to disk.
+        // 将缓存持久化到磁盘
         if (lintResultCache) {
             lintResultCache.reconcile();
         }
@@ -281,7 +261,7 @@ class CLIEngine{
             results,
             ...calculateStatsPerRun(results),
 
-            // Initialize it lazily because CLI and `ESLint` API don't use it.
+            // 惰性初始化，因为 CLI 和 `ESLint` API 不使用它
             get usedDeprecatedRules() {
                 if (!usedDeprecatedRules) {
                     usedDeprecatedRules = Array.from(
@@ -293,6 +273,85 @@ class CLIEngine{
         };
     }
 }
+```
+
+可以看到`lint`是通过`verifyText`处理的，这个方法底层使用的是`linter.verifyAndFix`，我们直接看`linter.verifyAndFix`方法
+
+# `linter/linter.js`
+## `verifyAndFix`
+```js
+class Linter{
+    /**
+     * Performs multiple autofix passes over the text until as many fixes as possible
+     * have been applied.
+     * @param {string} text The source text to apply fixes to.
+     * @param {ConfigData|ConfigArray} config The ESLint config object to use.
+     * @param {VerifyOptions&ProcessorOptions&FixOptions} options The ESLint options object to use.
+     * @returns {{fixed:boolean,messages:LintMessage[],output:string}} The result of the fix operation as returned from the
+     *      SourceCodeFixer.
+     */
+    verifyAndFix(text, config, options) {
+        let messages = [],
+            fixedResult,
+            fixed = false,
+            passNumber = 0,
+            currentText = text;
+        const debugTextDescription = options && options.filename || `${text.slice(0, 10)}...`;
+        const shouldFix = options && typeof options.fix !== "undefined" ? options.fix : true;
+
+        /**
+         * This loop continues until one of the following is true:
+         *
+         * 1. No more fixes have been applied.
+         * 2. Ten passes have been made.
+         *
+         * That means anytime a fix is successfully applied, there will be another pass.
+         * Essentially, guaranteeing a minimum of two passes.
+         */
+        do {
+            passNumber++;
+
+            debug(`Linting code for ${debugTextDescription} (pass ${passNumber})`);
+            messages = this.verify(currentText, config, options);
+
+            debug(`Generating fixed text for ${debugTextDescription} (pass ${passNumber})`);
+            fixedResult = SourceCodeFixer.applyFixes(currentText, messages, shouldFix);
+
+            /*
+             * stop if there are any syntax errors.
+             * 'fixedResult.output' is a empty string.
+             */
+            if (messages.length === 1 && messages[0].fatal) {
+                break;
+            }
+
+            // keep track if any fixes were ever applied - important for return value
+            fixed = fixed || fixedResult.fixed;
+
+            // update to use the fixed output instead of the original text
+            currentText = fixedResult.output;
+
+        } while (
+            fixedResult.fixed &&
+            passNumber < MAX_AUTOFIX_PASSES
+        );
+
+        /*
+         * If the last result had fixes, we need to lint again to be sure we have
+         * the most up-to-date information.
+         */
+        if (fixedResult.fixed) {
+            fixedResult.messages = this.verify(currentText, config, options);
+        }
+
+        // ensure the last result properly reflects if fixes were done
+        fixedResult.fixed = fixed;
+        fixedResult.output = currentText;
+
+        return fixedResult;
+    }
+}
+```
 
 # 问题
 1. 测试无法运行
