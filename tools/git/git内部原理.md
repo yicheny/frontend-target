@@ -186,13 +186,17 @@ git commit -m '在master的第二次提交'
 ![](https://pic.imgdb.cn/item/6132219a44eaada739e846dd.jpg)
 
 # 合并策略
-在了解`git`的记录原理之后，我们了解下git的一些合并策略：
+在了解`git`的记录原理之后，我们了解下git的一些常见的合并策略：
 1. `Fast-forward`
 1. `Recursive`
 1. `Xours`
 1. `Xtheirs`
 1. `Ours`
 1. `Octopus`
+
+然后再了解一些使用较少的合并策略：
+1. `Resolve`
+2. `squash `
 
 默认`git`会视情况选择合适的策略，如果有需要可以通过`git merge -s 策略名`指定合并策略
 
@@ -285,6 +289,15 @@ git commit -m '在master的第二次提交'
 和`Recursive`有些类似，是`Recursive`策略出现之前的三向合并默认策略，区别在于会在最近公共祖先节点中选择其中一个作为`base`节点进行合并
 
 ## `Squash`
+所谓Squash Merge，是指Git在做两个分支间的合并时，会把被合并分支（通常被称为topic分支）上的所有变更“压缩（squash）”成一个提交，追加到当前分支的后面，作为“合并提交”（merge commit）。
+
+从参与合并的文件变更上来说，Squash Merge和普通Merge并没有任何区别，效果完全一样。唯一的区别体现在提交历史上：正如我们前面提到的，对于普通的Merge而言，在当前分支上的合并提交通常会有两个parent；而Squash Merge却只有一个。
+
+Squash Merge不会像普通Merge那样在合并后的提交历史里保留被合并分支的分叉，被合并分支上的提交记录也不会出现在合并后的提交历史里，所有被合并分支上的变更都被“压缩”成了一个合并提交。
+
+如果在被合并分支上，完整的提交历史里包含了很多中间提交（intermediate commit），比如：改正一个小小的拼写错误可能也会成为一个独立的提交，而我们并不希望在合并时把这些细节都反应在当前分支的提交历史里。这时，我们就可以选择Squash Merge。
+
+另外，后面我们还会看到，如果在合并时想去除被合并分支上的那些中间提交，我们还可选择Rebase。
 
 # 变基
 看完`git merge` 的策略后，再看看另一个合并代码时常用的命令`git rebase`。`git rebase`和`merge`最大的不同是它会改变提交的历史。
@@ -310,9 +323,14 @@ $ git checkout dev
 $ git rebase master
 ```
 
-变基的原理是首先找到这两个分支（即当前分支`dev`、变基操作的目标基底分支`master`）的最近共同祖先`c3`，然后对比当前分支相对于该祖先的历次提交，提取相应的修改并存为临时文件，然后将当前分支指向目标基底`c5`, 最后以此将之前另存为临时文件的修改依序应用。【当前分支只取最后一次提交，然后根据最近祖先节点之后的提交可以对比获取补丁，最后将这些补丁和当前分支最终提交合并得到一个变基提交】
+变基的原理是：
+1. 首先找到这两个分支（即`dev`、`master`）的最近共同祖先`c3`
+2. 然后对比`dev`分支相对于该祖先的历次提交，提取相应的修改并存到临时文件
+3. 然后重置`dev`提交历史，使其和`master`提交历史一致
+4. 追加`dev`分支上的提交记录（将之前存到临时文件的修改依序应用）
 
 如图：
+
 ![](https://pic.imgdb.cn/item/613478a844eaada7396369f2.jpg)
 
 `Rebase`本质上就是丢弃已有的提交记录，创建新的提交记录，从内容上看是完全一样的，但提交历史却改变了。
@@ -447,6 +465,31 @@ If you follow that guideline, you’ll be fine. If you don’t, people will hate
 ## 变基 vs. 合并
 总的原则是，**只对尚未推送或分享给别人的本地修改执行变基操作清理历史，从不对已推送至别处的提交执行变基操作**，这样，你才能享受到两种方式带来的便利
 
+多人协同工作应该用 merge，一个人写代码可以用 rebase。
+
+merge会产生分支，然而从版本管理的角度，多人的工作本来就应该位于不同的分支。
+
+单纯为了线条好看而扭曲了实际开发过程中的事实，并不是可取的行为。如果需要merge，本来就是因为在你提交之前有别人修改了代码，那么别人的代码事实上确实就是与你并行修改。
+
+从流程上讲，别人的代码与你并行修改，并且同时都基于某个早先的基线版本，那么这样的两组修改就确实应该位于不同的分支。分支归并正确的显示了多人协同开发过程中实际发生的客观事实。
+
+因此显然应该选择merge，版本管理软件的职责就是准确的记录开发历史上发生过的所有事情，merge能确保你基于修改的基点忠实的反应了情况，这种情况下merge肯定是更准确的。
+
+但如果是你自己一个人写的代码，多余出来的分支确实是不必要的，本来就应该把线整理成线性。那么确实可以考虑使用rebase。——这种情况下一般发生于自己一个人使用了多台电脑，多台电脑各有不同的未提交代码的情形，建议考虑rebase。
+
+结论重复一下：归并目标是他人代码，用来解决两个不同开发者开发的代码冲突的时候，用merge，归并目标是自己代码，用来解决自己在两台不同电脑上修改代码的冲突的时候，用rebase。
+
+
+
+rebase，合并的结果好看，一条线，但合并过程中出现冲突的话，比较麻烦
+1. rebase过程中，一个commit出现冲突，下一个commit也极有可能出现冲突，一次rebase可能要解决多次冲突；
+2. 合并的历史脉络（冲突）被物理消灭了
+3. merge，合并结果不好看，一堆线交错，但合并有冲突的话，只要解一次就行了；
+
+
+
+为了追求Git的线好看，在团队合作中使用rebase说轻点是舍本逐末，说重了是对团队不负责任。个人以及本地项目无所谓。
+
 # 资料
 - [git合并原理](https://www.tripod.fun/2020/06/09/2020/git%E5%90%88%E5%B9%B6%E5%8E%9F%E7%90%861/)
 - [pro-git在线阅读](https://www.progit.cn/#_pro_git)
@@ -454,3 +497,9 @@ If you follow that guideline, you’ll be fine. If you don’t, people will hate
 - [这才是真正的Git——Git内部原理揭秘！](https://zhuanlan.zhihu.com/p/96631135)
 - [Git合并那些事——Merge策略（上）](https://morningspace.github.io/tech/git-merge-stories-2/#%E5%85%B3%E4%BA%8Emerge%E7%AD%96%E7%95%A5)
 - [Git合并那些事——Merge策略（下）](https://morningspace.github.io/tech/git-merge-stories-1/)
+- [Git subtree教程](https://segmentfault.com/a/1190000012002151)
+- [骚年，听说你写代码从来不用 git rebase [视频]](https://zhuanlan.zhihu.com/p/47905032)
+- [Why you should stop using Git rebase](https://medium.com/@fredrikmorken/why-you-should-stop-using-git-rebase-5552bee4fed1)
+- [代码合并：Merge、Rebase 的选择](https://github.com/geeeeeeeeek/git-recipes/wiki/5.1-%E4%BB%A3%E7%A0%81%E5%90%88%E5%B9%B6%EF%BC%9AMerge%E3%80%81Rebase-%E7%9A%84%E9%80%89%E6%8B%A9)
+- [git rebase 还是 merge的使用场景最通俗的解释](https://zhuanlan.zhihu.com/p/350187205)
+- [Git合并那些事——神奇的Rebase](https://morningspace.github.io/tech/git-merge-stories-6/)
