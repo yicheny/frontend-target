@@ -82,3 +82,4 @@ Gitlab flow 是 Git flow 与 Github flow 的综合。它吸取了两者的优点
 - [知乎-如何看待 Git flow 发明人称其不适用于持续交付？](https://www.zhihu.com/question/379545619)
 - [知乎-gitlab flow 大家是怎么优秀使用的，相关实践资料也可以？](https://www.zhihu.com/question/322574581/answer/671281377)
 - [知乎-三大工作流](https://zhuanlan.zhihu.com/p/140553749)
+- [阮一峰-workflow](https://www.ruanyifeng.com/blog/2015/12/git-workflow.html)

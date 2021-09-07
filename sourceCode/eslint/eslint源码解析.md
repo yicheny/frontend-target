@@ -23,6 +23,10 @@
 }
 ```
 
+现在我们知道的：
+
+![](https://pic.imgdb.cn/item/613719e144eaada7398a9c46.jpg)
+
 # `bin/eslint.js`
 ```js
 //helper和引用...
@@ -44,7 +48,12 @@
     );
 }()).catch(onFatalError);
 ```
-其他部分先不用管，我们直接进入`../lib/cli`文件中。
+到这里我们知道：
+
+![](https://pic.imgdb.cn/item/61371a3344eaada7398b36a6.jpg)
+
+
+其他部分先不管，优先关注`../lib/cli`文件。
 
 # `lib/cli.js`
 ```js
@@ -62,25 +71,32 @@ const cli = {
 
         //...检查一些参数特殊的情况并退出
 
-        //translateOptions：将 CLI 选项转换为 CLIEngine 预期的选项。
-        const engine = new ESLint(translateOptions(options));
-        let results;
+        //...lint核心处理
 
-        if (useStdin) {
-            //使用--stdin会走这里，先不关注
-        } else {
-            results = await engine.lintFiles(files);
-        }
-
-        if (options.fix) {
-            debug("Fix mode enabled - applying fixes");
-            await ESLint.outputFixes(results); //将修复后的结果写入文件
-        }
-
-        //...
+        //...quiet、printResults并退出
 
         return 2;
     } 
+}
+```
+
+## 核心处理
+```js
+//cli.execute方法中
+
+//translateOptions：将 CLI 选项转换为 CLIEngine 预期的选项。
+const engine = new ESLint(translateOptions(options));
+let results;
+
+if (useStdin) {
+    //使用--stdin会走这里，先不关注
+} else {
+    results = await engine.lintFiles(files);
+}
+
+if (options.fix) {
+    debug("Fix mode enabled - applying fixes");
+    await ESLint.outputFixes(results); //将修复后的结果写入文件
 }
 ```
 
