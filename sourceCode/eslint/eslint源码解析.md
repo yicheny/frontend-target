@@ -31,7 +31,7 @@
     process.on("uncaughtException", onFatalError);
     process.on("unhandledRejection", onFatalError);
 
-    // Call the config initializer if `--init` is present.
+    // 如果存在`--init`，则调用配置初始值设定项。
     if (process.argv.includes("--init")) {
         await require("../lib/init/config-initializer").initializeConfig();
         return;
@@ -51,21 +51,23 @@
 //helper和引用...
 
 const cli = {
+    /**
+     * 根据传入的参数数组执行 CLI
+     * @param {string|Array|Object} args 处理的参数
+     * @param {string} [text] 要 lint 的文本（用于 TTY）
+     * @returns {Promise<number>} 操作的退出代码
+     */
    async execute(args, text) {
-        if (Array.isArray(args)) {
-            debug("CLI args: %o", args.slice(2));
-        }
-
         //...将args解析成对象形式并赋值给变量options
 
-        //...检查一些参数使用错误的情况并退出
+        //...检查一些参数特殊的情况并退出
 
         //translateOptions：将 CLI 选项转换为 CLIEngine 预期的选项。
         const engine = new ESLint(translateOptions(options));
         let results;
 
         if (useStdin) {
-            //...
+            //使用--stdin会走这里，先不关注
         } else {
             results = await engine.lintFiles(files);
         }
