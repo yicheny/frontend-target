@@ -67,16 +67,150 @@ const cli = {
      * @returns {Promise<number>} 操作的退出代码
      */
    async execute(args, text) {
-        //...将args解析成对象形式并赋值给变量options
+        if (Array.isArray(args)) {
+            debug("CLI args: %o", args.slice(2));
+        }
 
-        //...检查一些参数特殊的情况并退出
+        /** @type {ParsedCLIOptions} */
+        let options;
 
-        //...lint核心处理
+        try {
+            options = CLIOptions.parse(args);
+        } catch (error) {
+            log.error(error.message);
+            return 2;
+        }
 
-        //...quiet、printResults并退出
+        const files = options._;
+        const useStdin = typeof text === "string";
+
+        if (options.help) {
+            log.info(CLIOptions.generateHelp());
+            return 0;
+        }
+        if (options.version) {
+            log.info(RuntimeInfo.version());
+            return 0;
+        }
+        if (options.envInfo) {
+            try {
+                log.info(RuntimeInfo.environment());
+                return 0;
+            } catch (err) {
+                log.error(err.message);
+                return 2;
+            }
+        }
+
+        if (options.printConfig) {
+            if (files.length) {
+                log.error("The --print-config option must be used with exactly one file name.");
+                return 2;
+            }
+            if (useStdin) {
+                log.error("The --print-config option is not available for piped-in code.");
+                return 2;
+            }
+
+            const engine = new ESLint(translateOptions(options));
+            const fileConfig =
+                await engine.calculateConfigForFile(options.printConfig);
+
+            log.info(JSON.stringify(fileConfig, null, "  "));
+            return 0;
+        }
+
+        debug(`Running on ${useStdin ? "text" : "files"}`);
+
+        if (options.fix && options.fixDryRun) {
+            log.error("The --fix option and the --fix-dry-run option cannot be used together.");
+            return 2;
+        }
+        if (useStdin && options.fix) {
+            log.error("The --fix option is not available for piped-in code; use --fix-dry-run instead.");
+            return 2;
+        }
+        if (options.fixType && !options.fix && !options.fixDryRun) {
+            log.error("The --fix-type option requires either --fix or --fix-dry-run.");
+            return 2;
+        }
+
+        //translateOptions将options转换为Eslint初始化需要的数据
+        const engine = new ESLint(translateOptions(options));
+        let results;
+
+        if (useStdin) {
+            results = await engine.lintText(text, {
+                filePath: options.stdinFilename,
+                warnIgnored: true
+            });
+        } else {
+            results = await engine.lintFiles(files);
+        }
+
+        if (options.fix) {
+            debug("Fix mode enabled - applying fixes");
+            await ESLint.outputFixes(results);
+        }
+
+        let resultsToPrint = results;
+
+        if (options.quiet) {
+            debug("Quiet mode enabled - filtering out warnings");
+            resultsToPrint = ESLint.getErrorResults(resultsToPrint);
+        }
+
+        if (await printResults(engine, resultsToPrint, options.format, options.outputFile)) {
+
+            // Errors and warnings from the original unfiltered results should determine the exit code
+            const { errorCount, fatalErrorCount, warningCount } = countErrors(results);
+
+            const tooManyWarnings =
+                options.maxWarnings >= 0 && warningCount > options.maxWarnings;
+            const shouldExitForFatalErrors =
+                options.exitOnFatalError && fatalErrorCount > 0;
+
+            if (!errorCount && tooManyWarnings) {
+                log.error(
+                    "ESLint found too many warnings (maximum: %s).",
+                    options.maxWarnings
+                );
+            }
+
+            if (shouldExitForFatalErrors) {
+                return 2;
+            }
+
+            return (errorCount || tooManyWarnings) ? 1 : 0;
+        }
 
         return 2;
-    } 
+    }
+}
+```
+
+流程示意图：
+
+![](https://pic.imgdb.cn/item/6138268644eaada73959cb1f.jpg)
+
+## `lint-core`
+重点查看`lint`部分的核心代码：
+```js
+const engine = new ESLint(translateOptions(options));
+let results;
+
+if (useStdin) {
+    results = await engine.lintText(text, {
+        filePath: options.stdinFilename,
+        warnIgnored: true
+    });
+} else {
+    results = await engine.lintFiles(files);
+}
+
+if (options.fix) {
+    debug("Fix mode enabled - applying fixes");
+    await ESLint.outputFixes(results);
 }
 ```
 
@@ -88,8 +222,11 @@ const cli = {
 const engine = new ESLint(translateOptions(options));
 let results;
 
-if (useStdin) {
-    //使用--stdin会走这里，先不关注
+if (useStdin) {//使用--stdin会走这里，先不关注
+    results = await engine.lintText(text, {
+        filePath: options.stdinFilename,
+        warnIgnored: true
+    }); 
 } else {
     results = await engine.lintFiles(files);
 }
@@ -100,7 +237,15 @@ if (options.fix) {
 }
 ```
 
+![](https://pic.imgdb.cn/item/6138949e44eaada7391b1201.jpg)
+
+这部分代码里有三个点我认为较为重要，我们接下来深入解读这三个点：
+1. 初始化`Eslint`
+2. 调用`engine.lintText`
+3. 调用`engine.lintFiles`
+
 # `eslint/eslint.js`
+这里先给出`constructor`部分的代码：
 ```js
 class ESLint {
     constructor(options = {}) {
@@ -140,6 +285,8 @@ class ESLint {
     //...其他方法
 }
 ```
+
+![](https://pic.imgdb.cn/item/6138954b44eaada7391be0de.jpg)
 
 # `cli-engine/cli-engine.js`
 ```js
