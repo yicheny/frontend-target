@@ -16,6 +16,7 @@
 
 # 入口
 ```json5
+//package.json
 {
     "bin": {
         "eslint": "./bin/eslint.js"
@@ -23,7 +24,7 @@
 }
 ```
 
-现在我们知道的：
+我们发现入口是`bin/eslint.js`文件
 
 ![](https://pic.imgdb.cn/item/613719e144eaada7398a9c46.jpg)
 
@@ -48,12 +49,10 @@
     );
 }()).catch(onFatalError);
 ```
-到这里我们知道：
+
+可以发现，核心内容在`../lib/cli`文件里：
 
 ![](https://pic.imgdb.cn/item/61371a3344eaada7398b36a6.jpg)
-
-
-其他部分先不管，优先关注`../lib/cli`文件。
 
 # `lib/cli.js`
 ```js
@@ -193,27 +192,6 @@ const cli = {
 
 ![](https://pic.imgdb.cn/item/6138268644eaada73959cb1f.jpg)
 
-## `lint-core`
-重点查看`lint`部分的核心代码：
-```js
-const engine = new ESLint(translateOptions(options));
-let results;
-
-if (useStdin) {
-    results = await engine.lintText(text, {
-        filePath: options.stdinFilename,
-        warnIgnored: true
-    });
-} else {
-    results = await engine.lintFiles(files);
-}
-
-if (options.fix) {
-    debug("Fix mode enabled - applying fixes");
-    await ESLint.outputFixes(results);
-}
-```
-
 ## 核心处理
 ```js
 //cli.execute方法中
@@ -237,7 +215,7 @@ if (options.fix) {
 }
 ```
 
-![](https://pic.imgdb.cn/item/6138949e44eaada7391b1201.jpg)
+![](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
 
 这部分代码里有三个点我认为较为重要，我们接下来深入解读这三个点：
 1. 初始化`Eslint`
@@ -286,25 +264,56 @@ class ESLint {
 }
 ```
 
-![](https://pic.imgdb.cn/item/6138954b44eaada7391be0de.jpg)
+![](https://pic.imgdb.cn/item/613984e944eaada73961c9b1.jpg)
+
+接下来进入`CLIEngine`的`constructor`，看看它在初始化的时候做了什么。
 
 # `cli-engine/cli-engine.js`
 ```js
 class CLIEngine {
+    /**
+     * Creates a new instance of the core CLI engine.
+     * @param {CLIEngineOptions} providedOptions The options for this instance.
+     */
     constructor(providedOptions) {
-        const options = Object.assign( Object.create(null), defaultOptions,{ cwd: process.cwd() }, providedOptions );
+        const options = Object.assign(
+            Object.create(null),
+            defaultOptions,
+            { cwd: process.cwd() },
+            providedOptions
+        );
 
         if (options.fix === void 0) {
             options.fix = false;
         }
 
         const additionalPluginPool = new Map();
-        const cacheFilePath = getCacheFile( options.cacheLocation || options.cacheFile, options.cwd);
+        const cacheFilePath = getCacheFile(
+            options.cacheLocation || options.cacheFile,
+            options.cwd
+        );
         const configArrayFactory = new CascadingConfigArrayFactory({
-            //...一系列参数配置
+            additionalPluginPool,
+            baseConfig: options.baseConfig || null,
+            cliConfig: createConfigDataFromOptions(options),
+            cwd: options.cwd,
+            ignorePath: options.ignorePath,
+            resolvePluginsRelativeTo: options.resolvePluginsRelativeTo,
+            rulePaths: options.rulePaths,
+            specificConfigPath: options.configFile,
+            useEslintrc: options.useEslintrc,
+            builtInRules,
+            loadRules,
+            eslintRecommendedPath: path.resolve(__dirname, "../../conf/eslint-recommended.js"),
+            eslintAllPath: path.resolve(__dirname, "../../conf/eslint-all.js")
         });
         const fileEnumerator = new FileEnumerator({
-            //...一系列参数配置
+            configArrayFactory,
+            cwd: options.cwd,
+            extensions: options.extensions,
+            globInputPaths: options.globInputPaths,
+            errorOnUnmatchedPattern: options.errorOnUnmatchedPattern,
+            ignore: options.ignore
         });
         const lintResultCache =
             options.cache ? new LintResultCache(cacheFilePath, options.cacheStrategy) : null;
@@ -315,104 +324,150 @@ class CLIEngine {
 
         // 存储私有数据
         internalSlotsMap.set(this, {
-            //...一系列数据
+            additionalPluginPool,
+            cacheFilePath,
+            configArrayFactory,
+            defaultIgnores: IgnorePattern.createDefaultIgnore(options.cwd),
+            fileEnumerator,
+            lastConfigArrays,
+            lintResultCache,
+            linter,
+            options
         });
 
-        // 为修复设置特殊过滤器
+        // 为fixes设置特殊过滤器
         if (options.fix && options.fixTypes && options.fixTypes.length > 0) {
-            //...
+            debug(`Using fix types ${options.fixTypes}`);
+
+            // throw an error if any invalid fix types are found
+            validateFixTypes(options.fixTypes);
+
+            // convert to Set for faster lookup
+            const fixTypes = new Set(options.fixTypes);
+
+            // save original value of options.fix in case it's a function
+            const originalFix = (typeof options.fix === "function")
+                ? options.fix : () => true;
+
+            options.fix = message => {
+                const rule = message.ruleId && getRule(message.ruleId, lastConfigArrays);
+                const matches = rule && rule.meta && fixTypes.has(rule.meta.type);
+
+                return matches && originalFix(message);
+            };
         }
     }
     
     //...其他方法
 }
 ```
-初始化`CLIEngine`创建了很多内容，看一下这些被创建的内容：
-- `additionalPluginPool` 附加插件池
-- `cacheFilePath` 缓存文件路径，如果没有被设置，那么默认是`.eslintcache`
-- `configArrayFactory`
-- `fileEnumerator`
-- `lintResultCache`
-- `linter`
-- `lastConfigArrays`
-- `internalSlotsMap` 这个是全局数据（`WeakMap`类型），以`CLIEngine`实例为键存储数据
 
-## `executeOnFiiles`方法
+![](https://pic.imgdb.cn/item/6139851144eaada7396218f9.jpg)
+
+这里创建的私有数据先不深入，在接下来的使用到这些数据的时候，我们再进行解读。
+
+现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
+
+![](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
+
+## `engine.lintFiles(files)`
+```js
+/**
+ * 在文件和目录名称数组上执行当前配置
+ * @param {string[]} patterns 文件名和目录名的数组
+ * @returns {Promise<LintResult[]>} lint的结果
+ */
+async lintFiles(patterns) {
+    //'patterns' 必须是非空字符串或非空字符串数组
+    if (!isNonEmptyString(patterns) && !isArrayOfNonEmptyString(patterns)) {
+        throw new Error("'patterns' must be a non-empty string or an array of non-empty strings");
+    }
+
+    const { cliEngine } = privateMembersMap.get(this);
+
+    //处理由 CLIEngine linting 报告生成的 linting 结果以匹配 ESLint 类的 API
+    return processCLIEngineLintReport(
+        cliEngine,
+        cliEngine.executeOnFiles(patterns)
+    );
+}
+```
+
+逻辑比较简单，不多做说明，值得关注是`processCLIEngineLintReport`和`cliEngine.executeOnFiles`
+
+首先看一下`processCLIEngineLintReport`的源码
+
+## `processCLIEngineLintReport`
+```js
+function processCLIEngineLintReport(cliEngine, { results }) {
+    const descriptor = {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return getOrFindUsedDeprecatedRules(cliEngine, this.filePath);
+        }
+    };
+
+    for (const result of results) {
+        Object.defineProperty(result, "usedDeprecatedRules", descriptor);
+    }
+
+    return results;
+}
+```
+实现并不复杂，就是创建了一个`descriptor`对象，然后挂载到每个`result`的`usedDeprecatedRules`属性上。
+
+接下来看一下`cliEngine.executeOnFiles`
+
+## `cliEngine.executeOnFiles`
 ```js
 class CLIEngine{
     //构造器及其他方法...
 
     /**
-     * Executes the current configuration on an array of file and directory names.
-     * @param {string[]} patterns An array of file and directory names.
-     * @returns {LintReport} The results for all files that were linted.
+     * 在文件和目录名称数组上执行当前配置
+     * @param {string[]} patterns 文件名和目录名数组
+     * @returns {LintReport} 所有被 linted 文件的结果
      */
     executeOnFiles(patterns) {
+        //取出数据
         const {
-            //...取出数据
+            cacheFilePath,
+            fileEnumerator,
+            lastConfigArrays,
+            lintResultCache,
+            linter,
+            options: {
+                allowInlineConfig,
+                cache,
+                cwd,
+                fix,
+                reportUnusedDisableDirectives
+            }
         } = internalSlotsMap.get(this);
-        const results = [];
-        const startTime = Date.now();
 
-        // 清除上次使用的配置数组。
+        const results = [];
+        const startTime = Date.now();//debug输出的时候会用到，不是核心数据
+
+        // 清除上次使用的配置数组
         lastConfigArrays.length = 0;
 
+        //删除缓存文件
         if (!cache) {
-            //...删除缓存文件
+            try {
+                fs.unlinkSync(cacheFilePath);
+            } catch (error) {
+                const errorCode = error && error.code;
+
+                // Ignore errors when no such file exists or file system is read only (and cache file does not exist)
+                if (errorCode !== "ENOENT" && !(errorCode === "EROFS" && !fs.existsSync(cacheFilePath))) {
+                    throw error;
+                }
+            }
         }
 
         // 迭代源代码文件
-        for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
-            if (ignored) {
-                results.push(createIgnoreResult(filePath, cwd));
-                continue;
-            }
-
-            /*
-             * Store used configs for:
-             * - 此方法用于收集已使用的已弃用规则
-             * - `getRules()` 方法用于收集所有加载的规则
-             * - `--fix-type` 选项用于获取加载规则的元数据
-             */
-            if (!lastConfigArrays.includes(config)) {
-                lastConfigArrays.push(config);
-            }
-
-            // 如果有缓存结果则跳过
-            if (lintResultCache) {
-                const cachedResult =
-                    lintResultCache.getCachedLintResults(filePath, config);
-
-                if (cachedResult) {
-                    const hadMessages =
-                        cachedResult.messages &&
-                        cachedResult.messages.length > 0;
-
-                    if (hadMessages && fix) {
-                        debug(`Reprocessing cached file to allow autofix: ${filePath}`);
-                    } else {
-                        debug(`Skipping file since it hasn't changed: ${filePath}`);
-                        results.push(cachedResult);
-                        continue;
-                    }
-                }
-            }
-
-            // Do lint.
-            const result = verifyText({
-                //...一系列参数
-            });
-
-            results.push(result);
-
-            /*
-             * 将 lint 结果存储在 LintResultCache 中。
-             * 注意：LintResultCache 将删除文件源和任何其他难以序列化的属性，并将在以后的 lint 运行中重新吸收这些属性。
-             */
-            if (lintResultCache) {
-                lintResultCache.setCachedLintResults(filePath, config, result);
-            }
-        }
+        // ...这段代码比较重要，代码量也较大，为方便阅读和理解，我放到了单独的子章节内
 
         // 将缓存持久化到磁盘
         if (lintResultCache) {
@@ -440,7 +495,76 @@ class CLIEngine{
 }
 ```
 
-可以看到`lint`是通过`verifyText`处理的，这个方法底层使用的是`linter.verifyAndFix`，我们直接看`linter.verifyAndFix`方法
+流程图：
+
+![](https://pic.imgdb.cn/item/6139d62844eaada7390532f2.jpg)
+
+有两个地方我比较关心，一个是迭代源代码文件进行的处理，一个是返回结果，首先从迭代源代码文件部分开始看吧
+
+## `迭代源代码文件`
+```js
+for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
+    if (ignored) {
+        results.push(createIgnoreResult(filePath, cwd));
+        continue;
+    }
+
+    /*
+        * Store used configs for:
+        * - 此方法用于收集已使用的已弃用规则
+        * - `getRules()` 方法用于收集所有加载的规则
+        * - `--fix-type` 选项用于获取加载规则的元数据
+        */
+    if (!lastConfigArrays.includes(config)) {
+        lastConfigArrays.push(config);
+    }
+
+    // 如果有缓存结果则跳过
+    if (lintResultCache) {
+        const cachedResult =
+            lintResultCache.getCachedLintResults(filePath, config);
+
+        if (cachedResult) {
+            const hadMessages =
+                cachedResult.messages &&
+                cachedResult.messages.length > 0;
+
+            if (hadMessages && fix) {
+                debug(`Reprocessing cached file to allow autofix: ${filePath}`);
+            } else {
+                debug(`Skipping file since it hasn't changed: ${filePath}`);
+                results.push(cachedResult);
+                continue;
+            }
+        }
+    }
+
+    // Do lint.
+    const result = verifyText({
+        text: fs.readFileSync(filePath, "utf8"),
+        filePath,
+        config,
+        cwd,
+        fix,
+        allowInlineConfig,
+        reportUnusedDisableDirectives,
+        fileEnumerator,
+        linter
+    });
+
+    results.push(result);
+
+    /*
+        * 将 lint 结果存储在 LintResultCache 中。
+        * 注意：LintResultCache 将删除文件源和任何其他难以序列化的属性，并将在以后的 lint 运行中重新吸收这些属性。
+        */
+    if (lintResultCache) {
+        lintResultCache.setCachedLintResults(filePath, config, result);
+    }
+}
+```
+
+![](https://pic.imgdb.cn/item/6139e7ef44eaada7391f7991.jpg)
 
 # `linter/linter.js`
 ## `linter.verifyAndFix`
