@@ -519,11 +519,12 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
         lastConfigArrays.push(config);
     }
 
-    // 如果有缓存结果则跳过
     if (lintResultCache) {
+        //从lintResultCache取出缓存
         const cachedResult =
             lintResultCache.getCachedLintResults(filePath, config);
 
+        //如果有缓存，添加到results
         if (cachedResult) {
             const hadMessages =
                 cachedResult.messages &&
@@ -564,87 +565,257 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 }
 ```
 
-![](https://pic.imgdb.cn/item/6139e7ef44eaada7391f7991.jpg)
+![](https://pic.imgdb.cn/item/613ace8344eaada739684d9d.jpg)
+
+这里值得关注的是`do lint`部分，调用了`verifyText`方法，我们看一下。
+
+### `verifyText`
+```js
+/**
+ * 使用 ESLint 处理源代码
+ * @param {Object} config config对象
+ * @param {string} config.text 要验证的源代码
+ * @param {string} config.cwd 当前工作目录的路径
+ * @param {string|undefined} config.filePath `text` 文件的路径。 如果未定义，则使用 `<text>`
+ * @param {ConfigArray} config.config config数组
+ * @param {boolean} config.fix 如果是`true`，则会进行修复
+ * @param {boolean} config.allowInlineConfig 如果为`true`，则使用指令注释。
+ * @param {boolean} config.reportUnusedDisableDirectives 如果为`true`，则报告未使用的 eslint-disable 注释。
+ * @param {FileEnumerator} config.fileEnumerator 用于检查路径是否为目标的文件枚举器
+ * @param {Linter} config.linter 要验证的 linter 实例
+ * @returns {LintResult} lint结果
+ * @private
+ */
+function verifyText({
+    text,
+    cwd,
+    filePath: providedFilePath,
+    config,
+    fix,
+    allowInlineConfig,
+    reportUnusedDisableDirectives,
+    fileEnumerator,
+    linter
+}) {
+    const filePath = providedFilePath || "<text>";
+
+    debug(`Lint ${filePath}`);
+
+    /*
+     * Verify.
+     * `config.extractConfig(filePath)` 需要一个绝对路径
+     * 但是 `linter` 不知道 cwd 的情况，所以通过 path.join 保证给 linter 的路径总是绝对路径。
+     */
+    const filePathToVerify = filePath === "<text>" ? path.join(cwd, filePath) : filePath;
+
+    const { fixed, messages, output } = linter.verifyAndFix(
+        text,
+        config,
+        {
+            allowInlineConfig,
+            filename: filePathToVerify,
+            fix,
+            reportUnusedDisableDirectives,
+
+            /**
+             * 检查 linter 是否应该采用给定的代码块。
+             * @param {string} blockFilename 代码块的虚拟文件名。
+             * @returns {boolean} 如果 linter 应该采用代码块则返回`true`
+             */
+            filterCodeBlock(blockFilename) {
+                return fileEnumerator.isTargetPath(blockFilename);
+            }
+        }
+    );
+
+    // 调整并返回。
+    const result = {
+        filePath,
+        messages,
+        ...calculateStatsPerFile(messages)
+    };
+
+    if (fixed) {
+        result.output = output;
+    }
+    if (
+        result.errorCount + result.warningCount > 0 &&
+        typeof result.output === "undefined"
+    ) {
+        result.source = text;
+    }
+
+    return result;
+}
+```
 
 # `linter/linter.js`
 ## `linter.verifyAndFix`
 ```js
-class Linter{
+/**
+ * Performs multiple autofix passes over the text until as many fixes as possible
+ * have been applied.
+ * @param {string} text The source text to apply fixes to.
+ * @param {ConfigData|ConfigArray} config The ESLint config object to use.
+ * @param {VerifyOptions&ProcessorOptions&FixOptions} options The ESLint options object to use.
+ * @returns {{fixed:boolean,messages:LintMessage[],output:string}} The result of the fix operation as returned from the
+ *      SourceCodeFixer.
+ */
+verifyAndFix(text, config, options) {
+    let messages = [],
+        fixedResult,
+        fixed = false,
+        passNumber = 0,
+        currentText = text;
+    const debugTextDescription = options && options.filename || `${text.slice(0, 10)}...`;
+    const shouldFix = options && typeof options.fix !== "undefined" ? options.fix : true;
+
     /**
-     * Performs multiple autofix passes over the text until as many fixes as possible
-     * have been applied.
-     * @param {string} text The source text to apply fixes to.
-     * @param {ConfigData|ConfigArray} config The ESLint config object to use.
-     * @param {VerifyOptions&ProcessorOptions&FixOptions} options The ESLint options object to use.
-     * @returns {{fixed:boolean,messages:LintMessage[],output:string}} The result of the fix operation as returned from the
-     *      SourceCodeFixer.
+     * This loop continues until one of the following is true:
+     *
+     * 1. No more fixes have been applied.
+     * 2. Ten passes have been made.
+     *
+     * That means anytime a fix is successfully applied, there will be another pass.
+     * Essentially, guaranteeing a minimum of two passes.
      */
-    verifyAndFix(text, config, options) {
-        let messages = [],
-            fixedResult,
-            fixed = false,
-            passNumber = 0,
-            currentText = text;
-        const debugTextDescription = options && options.filename || `${text.slice(0, 10)}...`;
-        const shouldFix = options && typeof options.fix !== "undefined" ? options.fix : true;
+    do {
+        passNumber++;
 
-        /**
-         * This loop continues until one of the following is true:
-         *
-         * 1. No more fixes have been applied.
-         * 2. Ten passes have been made.
-         *
-         * That means anytime a fix is successfully applied, there will be another pass.
-         * Essentially, guaranteeing a minimum of two passes.
-         */
-        do {
-            passNumber++;
+        debug(`Linting code for ${debugTextDescription} (pass ${passNumber})`);
+        messages = this.verify(currentText, config, options);
 
-            debug(`Linting code for ${debugTextDescription} (pass ${passNumber})`);
-            messages = this.verify(currentText, config, options);
-
-            debug(`Generating fixed text for ${debugTextDescription} (pass ${passNumber})`);
-            fixedResult = SourceCodeFixer.applyFixes(currentText, messages, shouldFix);
-
-            /*
-             * stop if there are any syntax errors.
-             * 'fixedResult.output' is a empty string.
-             */
-            if (messages.length === 1 && messages[0].fatal) {
-                break;
-            }
-
-            // keep track if any fixes were ever applied - important for return value
-            fixed = fixed || fixedResult.fixed;
-
-            // update to use the fixed output instead of the original text
-            currentText = fixedResult.output;
-
-        } while (
-            fixedResult.fixed &&
-            passNumber < MAX_AUTOFIX_PASSES
-        );
+        debug(`Generating fixed text for ${debugTextDescription} (pass ${passNumber})`);
+        fixedResult = SourceCodeFixer.applyFixes(currentText, messages, shouldFix);
 
         /*
-         * If the last result had fixes, we need to lint again to be sure we have
-         * the most up-to-date information.
-         */
-        if (fixedResult.fixed) {
-            fixedResult.messages = this.verify(currentText, config, options);
+            * stop if there are any syntax errors.
+            * 'fixedResult.output' is a empty string.
+            */
+        if (messages.length === 1 && messages[0].fatal) {
+            break;
         }
 
-        // ensure the last result properly reflects if fixes were done
-        fixedResult.fixed = fixed;
-        fixedResult.output = currentText;
+        // keep track if any fixes were ever applied - important for return value
+        fixed = fixed || fixedResult.fixed;
 
-        return fixedResult;
+        // update to use the fixed output instead of the original text
+        currentText = fixedResult.output;
+
+    } while (
+        fixedResult.fixed &&
+        passNumber < MAX_AUTOFIX_PASSES
+    );
+
+    /*
+        * If the last result had fixes, we need to lint again to be sure we have
+        * the most up-to-date information.
+        */
+    if (fixedResult.fixed) {
+        fixedResult.messages = this.verify(currentText, config, options);
     }
+
+    // ensure the last result properly reflects if fixes were done
+    fixedResult.fixed = fixed;
+    fixedResult.output = currentText;
+
+    return fixedResult;
 }
 ```
 
-## `SourceCodeFixer.applyFixes`
-
 ## `linter.verify`
+```js
+/**
+ * 根据第二个参数指定的规则验证文本.
+ * @param {string|SourceCode} textOrSourceCode 要解析的文本或 SourceCode 对象。
+ * @param {ConfigData|ConfigArray} config 一个 ESLintConfig 实例来配置一切。
+ * @param {(string|(VerifyOptions&ProcessorOptions))} [filenameOrOptions] 被检查文件的可选文件名。
+ *      如果未设置，则文件名将在rule上下文中默认为 '<input>'。 
+ *      如果是对象，则它具有"filename", "allowInlineConfig"和一些属性。
+ * @returns {LintMessage[]} 结果为消息数组或空数组（如果没有消息）。
+ */
+verify(textOrSourceCode, config, filenameOrOptions) {
+    debug("Verify");
+    const options = typeof filenameOrOptions === "string"
+        ? { filename: filenameOrOptions }
+        : filenameOrOptions || {};
+
+    // CLIEngine 传递一个 `ConfigArray` 对象。
+    if (config && typeof config.extractConfig === "function") {
+        return this._verifyWithConfigArray(textOrSourceCode, config, options);
+    }
+
+    /*
+    * `Linter` 不支持配置中的 `overrides` 属性。 
+    * 所以我们不能应用多个处理器。
+    */
+    if (options.preprocess || options.postprocess) {
+        return this._verifyWithProcessor(textOrSourceCode, config, options);
+    }
+
+    return this._verifyWithoutProcessors(textOrSourceCode, config, options);
+}
+```
+`eslint`源码使用了`js-doc`规则进行注释，这里我们关注下`verify`的参数和返回值的类型。
+
+### `@param {ConfigData|ConfigArray}`
+#### `ConfigData`
+```js
+//定义在/shared/types.js
+
+/**
+ * @typedef {Object} ConfigData
+ * @property {Record<string, boolean>} [env] The environment settings.
+ * @property {string | string[]} [extends] The path to other config files or the package name of shareable configs.
+ * @property {Record<string, GlobalConf>} [globals] The global variable settings.
+ * @property {string | string[]} [ignorePatterns] The glob patterns that ignore to lint.
+ * @property {boolean} [noInlineConfig] The flag that disables directive comments.
+ * @property {OverrideConfigData[]} [overrides] The override settings per kind of files.
+ * @property {string} [parser] The path to a parser or the package name of a parser.
+ * @property {ParserOptions} [parserOptions] The parser options.
+ * @property {string[]} [plugins] The plugin specifiers.
+ * @property {string} [processor] The processor specifier.
+ * @property {boolean} [reportUnusedDisableDirectives] The flag to report unused `eslint-disable` comments.
+ * @property {boolean} [root] The root flag.
+ * @property {Record<string, RuleConf>} [rules] The rule settings.
+ * @property {Object} [settings] The shared settings.
+ */
+```
+
+#### `ConfigArray`
+`ConfigArray`类型定义比较特殊，在`1a9f17151a4e93eb17c8a2bf4f0a5320cce616de`提交中被`Nicholas C. Zakas`移除了，原因是`eslint`团队预期在未来实现平面配置，逐渐替代`eslintrc`进行配置，这是计划进程的一部分[#13481](https://github.com/eslint/eslint/issues/13481)
+
+目前在[`7.30.0`](https://github.com/eslint/eslint/releases/tag/v7.30.0)版本中开始支持`FlatConfigArray`，需要使用[@humanwhocodes/config-array](https://www.npmjs.com/package/@humanwhocodes/config-array)库
+
+这是移除文件里的`ConfigArray`定义
+```js
+/**
+ * @fileoverview `ConfigArray` class.
+ *
+ *
+ * `ConfigArray` 类表达了一个配置的全部内容。 
+ * 它具有入口配置文件、扩展的基本配置文件、加载的解析器和加载的插件 
+ *
+ * `ConfigArray` 类提供了三个属性和两个方法。
+ *
+ * - `pluginEnvironments`
+ * - `pluginProcessors`
+ * - `pluginRules`
+ *      The `Map` objects that contain the members of all plugins that this
+ *      config array contains. Those map objects don't have mutation methods.
+ *      Those keys are the member ID such as `pluginId/memberName`.
+ * - `isRoot()`
+ *      If `true` then this configuration has `root:true` property.
+ * - `extractConfig(filePath)`
+ *      提取给定文件的最终配置. 
+ *      This means merging every config array element which that `criteria` property matched. 
+ *      `filePath` 参数必须是绝对路径。
+ *
+ * `ConfigArrayFactory` 提供配置文件的加载逻辑
+ *
+ * @author Toru Nagashima <https://github.com/mysticatea>
+ */
+```
 
 # 问题
 1. 测试无法运行
