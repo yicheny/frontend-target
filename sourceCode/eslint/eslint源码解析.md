@@ -632,13 +632,14 @@ function verifyText({
     const result = {
         filePath,
         messages,
-        ...calculateStatsPerFile(messages)
+        ...calculateStatsPerFile(messages) //计算每个文件的统计数据
     };
 
     if (fixed) {
         result.output = output;
     }
     if (
+        //如果有错误且无输出
         result.errorCount + result.warningCount > 0 &&
         typeof result.output === "undefined"
     ) {
@@ -740,7 +741,7 @@ verify(textOrSourceCode, config, filenameOrOptions) {
         ? { filename: filenameOrOptions }
         : filenameOrOptions || {};
 
-    // CLIEngine 传递一个 `ConfigArray` 对象。
+    // 如果是 CLIEngine 传递一个 `ConfigArray` 实例，走这里
     if (config && typeof config.extractConfig === "function") {
         return this._verifyWithConfigArray(textOrSourceCode, config, options);
     }
@@ -765,17 +766,17 @@ verify(textOrSourceCode, config, filenameOrOptions) {
 
 /**
  * @typedef {Object} ConfigData
- * @property {Record<string, boolean>} [env] The environment settings.
- * @property {string | string[]} [extends] The path to other config files or the package name of shareable configs.
- * @property {Record<string, GlobalConf>} [globals] The global variable settings.
- * @property {string | string[]} [ignorePatterns] The glob patterns that ignore to lint.
- * @property {boolean} [noInlineConfig] The flag that disables directive comments.
- * @property {OverrideConfigData[]} [overrides] The override settings per kind of files.
- * @property {string} [parser] The path to a parser or the package name of a parser.
- * @property {ParserOptions} [parserOptions] The parser options.
- * @property {string[]} [plugins] The plugin specifiers.
- * @property {string} [processor] The processor specifier.
- * @property {boolean} [reportUnusedDisableDirectives] The flag to report unused `eslint-disable` comments.
+ * @property {Record<string, boolean>} [env] 环境设置
+ * @property {string | string[]} [extends] 其他配置文件的路径或可共享配置的包名称
+ * @property {Record<string, GlobalConf>} [globals] 全局变量设置
+ * @property {string | string[]} [ignorePatterns] 忽略 lint 的 glob 模式
+ * @property {boolean} [noInlineConfig] 禁用指令注释的标志
+ * @property {OverrideConfigData[]} [overrides] 每种文件的覆盖设置
+ * @property {string} [parser] 解析器的路径或解析器的包名
+ * @property {ParserOptions} [parserOptions] 解析器选项
+ * @property {string[]} [plugins] 插件说明符
+ * @property {string} [processor] 处理器说明符
+ * @property {boolean} [reportUnusedDisableDirectives] 报告未使用的 `eslint-disable` 注释的标志
  * @property {boolean} [root] The root flag.
  * @property {Record<string, RuleConf>} [rules] The rule settings.
  * @property {Object} [settings] The shared settings.
@@ -798,24 +799,361 @@ verify(textOrSourceCode, config, filenameOrOptions) {
  *
  * `ConfigArray` 类提供了三个属性和两个方法。
  *
- * - `pluginEnvironments`
- * - `pluginProcessors`
+ * - `pluginEnvironments` 插件环境【Map类型，且不可修改】
+ * - `pluginProcessors` 插件处理器【Map类型，且不可修改】
  * - `pluginRules`
- *      The `Map` objects that contain the members of all plugins that this
- *      config array contains. Those map objects don't have mutation methods.
- *      Those keys are the member ID such as `pluginId/memberName`.
- * - `isRoot()`
- *      If `true` then this configuration has `root:true` property.
+ *      是`Map`类型，包含配置数组里所有插件的成员
+ *      这个`Map`类型没有突变方法【？我理解是没有扩展新方法】
+ *      使用的key是成员ID，比如`pluginId/memberName`
+ * - `isRoot()` 如果是`true`，则它的配置属性里包含`root:true`
  * - `extractConfig(filePath)`
- *      提取给定文件的最终配置. 
- *      This means merging every config array element which that `criteria` property matched. 
  *      `filePath` 参数必须是绝对路径。
+ *      提取给定文件的最终配置. 
+ *      会合并所有通过`criteria`属性匹配的配置数组元素（element.criteria是文件测试器）
  *
  * `ConfigArrayFactory` 提供配置文件的加载逻辑
  *
  * @author Toru Nagashima <https://github.com/mysticatea>
  */
 ```
+
+### `@param {(string|(VerifyOptions&ProcessorOptions))}`
+#### `VerifyOptions`
+```js
+/**
+ * @typedef {Object} VerifyOptions
+ * @property {boolean} [allowInlineConfig] 
+ *      允许/禁止内联注释在设置后更改配置的能力
+ *      如果未提供，则默认为 true
+ *      如果想在没有注释覆盖规则的情况下验证 JS，则很有用.
+ * @property {boolean} [disableFixes] 如果 `true` 则 linter 不会将 `fix` 属性放入 lint 结果中。
+ * @property {string} [filename] 源代码的文件名
+ * @property {boolean | "off" | "warn" | "error"} [reportUnusedDisableDirectives] 为未使用的 `eslint-disable` 指令添加报告的错误。
+ */
+```
+
+#### `ProcessorOptions`
+```js
+/**
+ * @typedef {Object} ProcessorOptions
+ * @property {(filename:string, text:string) => boolean} [filterCodeBlock]  用于选择采用代码块的函数
+ * @property {Processor.postprocess} [postprocess] 报告消息的后处理器
+ *      如果提供，它应该接受从预处理器返回的每个代码块的消息列表数组，根据需要对消息应用映射，
+ *      并返回一维消息数组。
+ * @property {Processor.preprocess} [preprocess] 源文本预处理器.
+ *      如果提供，它应该接受一串源文本，并将代码块数组返回给 lint。
+ */
+```
+
+## `_verifyWithConfigArray`
+```js
+/**
+ * 使用 `ConfigArray` 验证给定的代码。
+ * @param {string|SourceCode} textOrSourceCode The source code.
+ * @param {ConfigArray} configArray The config array.
+ * @param {VerifyOptions&ProcessorOptions} options The options.
+ * @returns {LintMessage[]} The found problems.
+ */
+_verifyWithConfigArray(textOrSourceCode, configArray, options) {
+    debug("With ConfigArray: %s", options.filename);
+
+    // 存储配置数组以便稍后获取插件环境和规则。
+    internalSlotsMap.get(this).lastConfigArray = configArray;
+
+    // 提取此文件的最终配置。
+    const config = configArray.extractConfig(options.filename);
+    const processor =
+        config.processor &&
+        configArray.pluginProcessors.get(config.processor);
+
+    // Verify.
+    if (processor) {
+        debug("Apply the processor: %o", config.processor);
+        const { preprocess, postprocess, supportsAutofix } = processor;
+        const disableFixes = options.disableFixes || !supportsAutofix;
+
+        return this._verifyWithProcessor(
+            textOrSourceCode,
+            config,
+            { ...options, disableFixes, postprocess, preprocess },
+            configArray
+        );
+    }
+    return this._verifyWithoutProcessors(textOrSourceCode, config, options);
+}
+```
+
+## `_verifyWithProcessor`
+```js
+/**
+ * Verify with a processor.
+ * @param {string|SourceCode} textOrSourceCode The source code.
+ * @param {ConfigData|ExtractedConfig} config The config array.
+ * @param {VerifyOptions&ProcessorOptions} options The options.
+ * @param {ConfigArray} [configForRecursive] `ConfigArray` 对象递归地应用多个处理器。
+ * @returns {LintMessage[]} The found problems.
+ */
+_verifyWithProcessor(textOrSourceCode, config, options, configForRecursive) {
+    const filename = options.filename || "<input>";
+    const filenameToExpose = normalizeFilename(filename);
+    const physicalFilename = options.physicalFilename || filenameToExpose;
+    const text = ensureText(textOrSourceCode);
+    const preprocess = options.preprocess || (rawText => [rawText]);
+
+    const postprocess = options.postprocess || (messagesList => messagesList.flat());
+    const filterCodeBlock =
+        options.filterCodeBlock ||
+        (blockFilename => blockFilename.endsWith(".js"));
+    const originalExtname = path.extname(filename);
+    const messageLists = preprocess(text, filenameToExpose).map((block, i) => {
+        debug("A code block was found: %o", block.filename || "(unnamed)");
+
+        // Keep the legacy behavior.
+        if (typeof block === "string") {
+            return this._verifyWithoutProcessors(block, config, options);
+        }
+
+        const blockText = block.text;
+        const blockName = path.join(filename, `${i}_${block.filename}`);
+
+        // Skip this block if filtered.
+        if (!filterCodeBlock(blockName, blockText)) {
+            debug("This code block was skipped.");
+            return [];
+        }
+
+        // Resolve configuration again if the file content or extension was changed.
+        if (configForRecursive && (text !== blockText || path.extname(blockName) !== originalExtname)) {
+            debug("Resolving configuration again because the file content or extension was changed.");
+            return this._verifyWithConfigArray(
+                blockText,
+                configForRecursive,
+                { ...options, filename: blockName, physicalFilename }
+            );
+        }
+
+        // Does lint.
+        return this._verifyWithoutProcessors(
+            blockText,
+            config,
+            { ...options, filename: blockName, physicalFilename }
+        );
+    });
+
+    return postprocess(messageLists, filenameToExpose);
+}
+```
+可以看到这里两个核心处理函数`preprocess`、`postprocess`的默认来源都是`options`，那么`options`是什么时候设置的？
+
+其实就在上一步`_verifyWithConfigArray`里，相关代码：
+```js
+const processor =
+    config.processor &&
+    configArray.pluginProcessors.get(config.processor);
+
+if (processor) {
+    debug("Apply the processor: %o", config.processor);
+    const { preprocess, postprocess, supportsAutofix } = processor;
+    const disableFixes = options.disableFixes || !supportsAutofix;
+
+    return this._verifyWithProcessor(
+        textOrSourceCode,
+        config,
+        { ...options, disableFixes, postprocess, preprocess },
+        configArray
+    );
+}
+```
+可以看到，是从`configArray.pluginProcessors`取出来的。
+
+> 传递链条比较长，我不一个个列举源码了，链条如下：
+
+- `lint#_verifyWithProcessor` 
+- -> `lint#_verifyWithConfigArray` 
+- -> `lint#verify` 
+- -> `cli-engine#executeOnFiles` 
+- -> `fileEnumerator`
+- -> `{ config, filePath, ignored }`（从迭代器里取出来）
+
+## `_verifyWithoutProcessors`
+```js
+/**
+ * 与 linter.verify 相同，但不支持处理器。
+ * @param {string|SourceCode} textOrSourceCode The text to parse or a SourceCode object.
+ * @param {ConfigData} providedConfig An ESLintConfig instance to configure everything.
+ * @param {VerifyOptions} [providedOptions] 被检查文件的可选文件名。
+ * @returns {LintMessage[]} The results as an array of messages or an empty array if no messages.
+ */
+_verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
+    const slots = internalSlotsMap.get(this);
+    const config = providedConfig || {};
+    const options = normalizeVerifyOptions(providedOptions, config);
+    let text;
+
+    // evaluate arguments
+    if (typeof textOrSourceCode === "string") {
+        slots.lastSourceCode = null;
+        text = textOrSourceCode;
+    } else {
+        slots.lastSourceCode = textOrSourceCode;
+        text = textOrSourceCode.text;
+    }
+
+    // Resolve parser.
+    let parserName = DEFAULT_PARSER_NAME;
+    let parser = espree;
+
+    if (typeof config.parser === "object" && config.parser !== null) {
+        parserName = config.parser.filePath;
+        parser = config.parser.definition;
+    } else if (typeof config.parser === "string") {
+        if (!slots.parserMap.has(config.parser)) {
+            return [{
+                ruleId: null,
+                fatal: true,
+                severity: 2,
+                message: `Configured parser '${config.parser}' was not found.`,
+                line: 0,
+                column: 0
+            }];
+        }
+        parserName = config.parser;
+        parser = slots.parserMap.get(config.parser);
+    }
+
+    // search and apply "eslint-env *".
+    const envInFile = options.allowInlineConfig && !options.warnInlineConfig
+        ? findEslintEnv(text)
+        : {};
+    const resolvedEnvConfig = Object.assign({ builtin: true }, config.env, envInFile);
+    const enabledEnvs = Object.keys(resolvedEnvConfig)
+        .filter(envName => resolvedEnvConfig[envName])
+        .map(envName => getEnv(slots, envName))
+        .filter(env => env);
+
+    const parserOptions = resolveParserOptions(parser, config.parserOptions || {}, enabledEnvs);
+    const configuredGlobals = resolveGlobals(config.globals || {}, enabledEnvs);
+    const settings = config.settings || {};
+
+    if (!slots.lastSourceCode) {
+        const parseResult = parse(
+            text,
+            parser,
+            parserOptions,
+            options.filename
+        );
+
+        if (!parseResult.success) {
+            return [parseResult.error];
+        }
+
+        slots.lastSourceCode = parseResult.sourceCode;
+    } else {
+
+        /*
+            * If the given source code object as the first argument does not have scopeManager, analyze the scope.
+            * This is for backward compatibility (SourceCode is frozen so it cannot rebind).
+            */
+        if (!slots.lastSourceCode.scopeManager) {
+            slots.lastSourceCode = new SourceCode({
+                text: slots.lastSourceCode.text,
+                ast: slots.lastSourceCode.ast,
+                parserServices: slots.lastSourceCode.parserServices,
+                visitorKeys: slots.lastSourceCode.visitorKeys,
+                scopeManager: analyzeScope(slots.lastSourceCode.ast, parserOptions)
+            });
+        }
+    }
+
+    const sourceCode = slots.lastSourceCode;
+    const commentDirectives = options.allowInlineConfig
+        ? getDirectiveComments(options.filename, sourceCode.ast, ruleId => getRule(slots, ruleId), options.warnInlineConfig)
+        : { configuredRules: {}, enabledGlobals: {}, exportedVariables: {}, problems: [], disableDirectives: [] };
+
+    // augment global scope with declared global variables
+    addDeclaredGlobals(
+        sourceCode.scopeManager.scopes[0],
+        configuredGlobals,
+        { exportedVariables: commentDirectives.exportedVariables, enabledGlobals: commentDirectives.enabledGlobals }
+    );
+
+    const configuredRules = Object.assign({}, config.rules, commentDirectives.configuredRules);
+
+    let lintingProblems;
+
+    try {
+        lintingProblems = runRules(
+            sourceCode,
+            configuredRules,
+            ruleId => getRule(slots, ruleId),
+            parserOptions,
+            parserName,
+            settings,
+            options.filename,
+            options.disableFixes,
+            slots.cwd,
+            providedOptions.physicalFilename
+        );
+    } catch (err) {
+        err.message += `\nOccurred while linting ${options.filename}`;
+        debug("An error occurred while traversing");
+        debug("Filename:", options.filename);
+        if (err.currentNode) {
+            const { line } = err.currentNode.loc.start;
+
+            debug("Line:", line);
+            err.message += `:${line}`;
+        }
+        debug("Parser Options:", parserOptions);
+        debug("Parser Path:", parserName);
+        debug("Settings:", settings);
+        throw err;
+    }
+
+    return applyDisableDirectives({
+        directives: commentDirectives.disableDirectives,
+        problems: lintingProblems
+            .concat(commentDirectives.problems)
+            .sort((problemA, problemB) => problemA.line - problemB.line || problemA.column - problemB.column),
+        reportUnusedDisableDirectives: options.reportUnusedDisableDirectives
+    });
+}
+```
+
+# `FileEnumerator`
+查找过程略掉，可以发现`FileEnumerator`枚举的`config`是通过`configArrayFactory.getConfigArrayForFile`获得的，相关代码如下：
+```js
+//FileEnumerator *_iterateFilesRecursive方法中
+config = configArrayFactory.getConfigArrayForFile(
+    filePath,
+    { ignoreNotFoundError: true }
+);
+```
+
+关于`configArrayFactory`的类型定义：
+```js
+/**
+ * @typedef {Object} FileEnumeratorInternalSlots
+ * @property {CascadingConfigArrayFactory} configArrayFactory The factory for config arrays.
+ * @property {string} cwd The base directory to start lookup.
+ * @property {RegExp|null} extensionRegExp The RegExp to test if a string ends with specific file extensions.
+ * @property {boolean} globInputPaths Set to false to skip glob resolution of input file paths to lint (default: true). If false, each input file paths is assumed to be a non-glob path to an existing file.
+ * @property {boolean} ignoreFlag The flag to check ignored files.
+ * @property {(filePath:string, dot:boolean) => boolean} defaultIgnores The default predicate function to ignore files.
+ */
+```
+
+来源于：
+```js
+const {
+    Legacy: {
+        IgnorePattern,
+        CascadingConfigArrayFactory
+    }
+} = require("@eslint/eslintrc");
+```
+
+关于`@eslint/eslintrc`也是之前提到的[#13481](https://github.com/eslint/eslint/issues/13481)计划的一部分。
 
 # 问题
 1. 测试无法运行
@@ -829,3 +1167,4 @@ verify(textOrSourceCode, config, filenameOrOptions) {
 
 # 资料
 - [`eslint v7.32.0`](https://github.com/eslint/eslint/tree/v7.32.0#installation-and-usage)
+- [`@eslint/eslintrc v0.4.3`](https://github.com/eslint/eslintrc/tree/v0.4.3)
