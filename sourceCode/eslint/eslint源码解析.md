@@ -501,7 +501,7 @@ class CLIEngine{
 
 有两个地方我比较关心，一个是迭代源代码文件进行的处理，一个是返回结果，首先从迭代源代码文件部分开始看吧
 
-## `迭代源代码文件`
+## 迭代源代码文件
 ```js
 for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
     if (ignored) {
@@ -650,12 +650,15 @@ function verifyText({
 }
 ```
 
+![](https://pic.imgdb.cn/item/613ecafd44eaada739b8e077.jpg)
+
+接下来我们看一下`linter.verifyAndFix`这个方法
+
 # `linter/linter.js`
 ## `linter.verifyAndFix`
 ```js
 /**
- * Performs multiple autofix passes over the text until as many fixes as possible
- * have been applied.
+ * 对文本执行多次自动修复，直到应用了尽可能多的修复
  * @param {string} text The source text to apply fixes to.
  * @param {ConfigData|ConfigArray} config The ESLint config object to use.
  * @param {VerifyOptions&ProcessorOptions&FixOptions} options The ESLint options object to use.
@@ -672,13 +675,12 @@ verifyAndFix(text, config, options) {
     const shouldFix = options && typeof options.fix !== "undefined" ? options.fix : true;
 
     /**
-     * This loop continues until one of the following is true:
+     * 此循环一直持续到以下情况之一为true：
      *
-     * 1. No more fixes have been applied.
-     * 2. Ten passes have been made.
+     * 1. 没有应用更多的修复程序。
+     * 2. 已经通过了十次。
      *
-     * That means anytime a fix is successfully applied, there will be another pass.
-     * Essentially, guaranteeing a minimum of two passes.
+     * 这意味着无论何时成功应用修复，都会有另一次通过。本质上，保证至少两次通过。
      */
     do {
         passNumber++;
@@ -690,17 +692,17 @@ verifyAndFix(text, config, options) {
         fixedResult = SourceCodeFixer.applyFixes(currentText, messages, shouldFix);
 
         /*
-            * stop if there are any syntax errors.
-            * 'fixedResult.output' is a empty string.
+            * 如果有任何语法错误，都会停止。
+            * 'fixedResult.output' 会是一个空字符串。
             */
         if (messages.length === 1 && messages[0].fatal) {
             break;
         }
 
-        // keep track if any fixes were ever applied - important for return value
+        // 确认是否已经被修复过 - 对返回值很重要
         fixed = fixed || fixedResult.fixed;
 
-        // update to use the fixed output instead of the original text
+        // 更新：使用output而不是原始文本
         currentText = fixedResult.output;
 
     } while (
@@ -709,19 +711,38 @@ verifyAndFix(text, config, options) {
     );
 
     /*
-        * If the last result had fixes, we need to lint again to be sure we have
-        * the most up-to-date information.
+        * 如果最后的结果被修复，我们需要再次检查以确保我们拥有最新的信息。
         */
     if (fixedResult.fixed) {
         fixedResult.messages = this.verify(currentText, config, options);
     }
 
-    // ensure the last result properly reflects if fixes were done
+    // 确保最后的结果正确反映修复是否完成
     fixedResult.fixed = fixed;
     fixedResult.output = currentText;
 
     return fixedResult;
 }
+```
+这里可以看到`fixedResult`有三个值，稍微介绍下：
+- `fixed` 是否修复
+- `output` 修复后的结果
+- `lintMessage[]` 由`LintMessage`组成的数组，`LintMessage`是对象类型，可以认为是报错信息（或者说Lint信息）
+
+```js
+/**
+ * @typedef {Object} LintMessage
+ * @property {number|undefined} column The 1-based column number.
+ * @property {number} [endColumn] The 1-based column number of the end location.
+ * @property {number} [endLine] The 1-based line number of the end location.
+ * @property {boolean} fatal If `true` then this is a fatal error.
+ * @property {{range:[number,number], text:string}} [fix] Information for autofix.
+ * @property {number|undefined} line The 1-based line number.
+ * @property {string} message The error message.
+ * @property {string|null} ruleId The ID of the rule which makes this message.
+ * @property {0|1|2} severity The severity of this message.
+ * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] Information for suggestions.
+ */
 ```
 
 ## `linter.verify`
@@ -987,10 +1008,10 @@ if (processor) {
 _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
     const slots = internalSlotsMap.get(this);
     const config = providedConfig || {};
-    const options = normalizeVerifyOptions(providedOptions, config);
+    const options = normalizeVerifyOptions(providedOptions, config);//规范和验证options
     let text;
 
-    // evaluate arguments
+    // 设置slots.lastSourceCode、text
     if (typeof textOrSourceCode === "string") {
         slots.lastSourceCode = null;
         text = textOrSourceCode;
@@ -999,10 +1020,11 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
         text = textOrSourceCode.text;
     }
 
-    // Resolve parser.
+    // 初始化解析器【默认】
     let parserName = DEFAULT_PARSER_NAME;
     let parser = espree;
 
+    // 更换解析器
     if (typeof config.parser === "object" && config.parser !== null) {
         parserName = config.parser.filePath;
         parser = config.parser.definition;
@@ -1021,7 +1043,7 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
         parser = slots.parserMap.get(config.parser);
     }
 
-    // search and apply "eslint-env *".
+    // 搜索并应用"eslint-env *".
     const envInFile = options.allowInlineConfig && !options.warnInlineConfig
         ? findEslintEnv(text)
         : {};
@@ -1070,7 +1092,7 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
         ? getDirectiveComments(options.filename, sourceCode.ast, ruleId => getRule(slots, ruleId), options.warnInlineConfig)
         : { configuredRules: {}, enabledGlobals: {}, exportedVariables: {}, problems: [], disableDirectives: [] };
 
-    // augment global scope with declared global variables
+    // 用声明的全局变量扩大全局作用域
     addDeclaredGlobals(
         sourceCode.scopeManager.scopes[0],
         configuredGlobals,
@@ -1117,6 +1139,86 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
             .sort((problemA, problemB) => problemA.line - problemB.line || problemA.column - problemB.column),
         reportUnusedDisableDirectives: options.reportUnusedDisableDirectives
     });
+}
+```
+
+## `parse`
+```js
+/**
+ * 将文本解析为 AST。 
+ * 移到这里是因为 try-catch 阻止了函数的优化，所以最好保持 try-catch 尽可能孤立
+ * @param {string} text The text to parse.
+ * @param {Parser} parser The parser to parse.
+ * @param {ParserOptions} providedParserOptions Options to pass to the parser
+ * @param {string} filePath The path to the file being parsed.
+ * @returns {{success: false, error: Problem}|{success: true, sourceCode: SourceCode}}
+ * An object containing the AST and parser services if parsing was successful, or the error if parsing failed
+ * @private
+ */
+function parse(text, parser, providedParserOptions, filePath) {
+    const textToParse = stripUnicodeBOM(text).replace(astUtils.shebangPattern, (match, captured) => `//${captured}`);
+    const parserOptions = Object.assign({}, providedParserOptions, {
+        loc: true,
+        range: true,
+        raw: true,
+        tokens: true,
+        comment: true,
+        eslintVisitorKeys: true,
+        eslintScopeManager: true,
+        filePath
+    });
+
+    /*
+     * Check for parsing errors first. If there's a parsing error, nothing
+     * else can happen. However, a parsing error does not throw an error
+     * from this method - it's just considered a fatal error message, a
+     * problem that ESLint identified just like any other.
+     */
+    try {
+        const parseResult = (typeof parser.parseForESLint === "function")
+            ? parser.parseForESLint(textToParse, parserOptions)
+            : { ast: parser.parse(textToParse, parserOptions) };
+        const ast = parseResult.ast;
+        const parserServices = parseResult.services || {};
+        const visitorKeys = parseResult.visitorKeys || evk.KEYS;
+        const scopeManager = parseResult.scopeManager || analyzeScope(ast, parserOptions, visitorKeys);
+
+        return {
+            success: true,
+
+            /*
+             * Save all values that `parseForESLint()` returned.
+             * If a `SourceCode` object is given as the first parameter instead of source code text,
+             * linter skips the parsing process and reuses the source code object.
+             * In that case, linter needs all the values that `parseForESLint()` returned.
+             */
+            sourceCode: new SourceCode({
+                text,
+                ast,
+                parserServices,
+                scopeManager,
+                visitorKeys
+            })
+        };
+    } catch (ex) {
+
+        // If the message includes a leading line number, strip it:
+        const message = `Parsing error: ${ex.message.replace(/^line \d+:/iu, "").trim()}`;
+
+        debug("%s\n%s", message, ex.stack);
+
+        return {
+            success: false,
+            error: {
+                ruleId: null,
+                fatal: true,
+                severity: 2,
+                message,
+                line: ex.lineNumber,
+                column: ex.column
+            }
+        };
+    }
 }
 ```
 
