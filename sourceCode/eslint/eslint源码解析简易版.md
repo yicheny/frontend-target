@@ -11,8 +11,9 @@
 1. 掌握`eslint`使用【主要是配置这一块】
 1. `javascript`基本语法
 
-# 目标
-1. 理解执行`eslint --fix`的流程
+# 问题
+在开始之前我会提几个问题，阅读源码的时候带着这些问题去思考，最终问题解答我放到了“解答”这个部分，可以直接在这部分看解答。
+1. `eslint`是怎么将`eslintrc.*`作为默认配置的？
 
 # 入口
 ```json5
@@ -344,7 +345,9 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
 
 ### 设置`slots.lastSourceCode`
 ```js
+//如果没有slots.lastSourceCode
 if (!slots.lastSourceCode) {
+    //使用parse解析【这里是AST转换】
     const parseResult = parse(
         text,
         parser,
@@ -352,14 +355,130 @@ if (!slots.lastSourceCode) {
         options.filename
     );
 
+    //这说明转换失败
     if (!parseResult.success) {
         return [parseResult.error];
     }
 
+    //赋值slots.lastSourceCode
     slots.lastSourceCode = parseResult.sourceCode;
 } else {
+    //如果有slots.lastSourceCode，但是没有slots.lastSourceCode.scopeManager
     if (!slots.lastSourceCode.scopeManager) {
+        //使用new SourceCode生成slots.lastSourceCode
         slots.lastSourceCode = new SourceCode({...});
     }
 }
 ```
+可以看到有两个点值得关注：`parse`、`SourceCode`，我们先看`parse`
+
+### `parse`
+```js
+function parse(text, parser, providedParserOptions, filePath) {
+    //1. 去除BOM; 2. 注释Shebang
+    const textToParse = stripUnicodeBOM(text).replace(astUtils.shebangPattern, (match, captured) => `//${captured}`);
+
+    const parserOptions = Object.assign({}, providedParserOptions, {...});
+
+    try {
+        //这部分是SourceCode初始化需要用到的参数
+        const parseResult = (typeof parser.parseForESLint === "function")
+            ? parser.parseForESLint(textToParse, parserOptions)
+            : { ast: parser.parse(textToParse, parserOptions) };
+        const ast = parseResult.ast;
+        const parserServices = parseResult.services || {};
+        const visitorKeys = parseResult.visitorKeys || evk.KEYS;
+        const scopeManager = parseResult.scopeManager || analyzeScope(ast, parserOptions, visitorKeys);
+
+        return {
+            success: true,
+            sourceCode: new SourceCode({...})
+        };
+    } catch (ex) {
+        //如果出现解析错误，不会直接抛错，而是作为一个错误信息返回
+        return {
+            success: false,
+            error: {...}
+        };
+    }
+}
+```
+可以看到，即使是通过`parse`方法，`slots.lastSourceCode`得到的依旧是`SourceCode`实例。
+
+### `runRules`
+```js
+function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parserName, settings, filename, disableFixes, cwd, physicalFilename) {
+    const emitter = createEmitter();
+    const nodeQueue = [];
+    let currentNode = sourceCode.ast;
+
+    Traverser.traverse(sourceCode.ast, {...});
+
+    //规则上下文都继承这个对象，相比复制属性性能更好
+    const sharedTraversalContext = Object.freeze(Object.assign(Object.create(BASE_TRAVERSAL_CONTEXT),{...}));
+
+    const lintingProblems = [];
+
+    Object.keys(configuredRules).forEach(...));
+
+    //如果顶级节点是"Program"，则仅运行代码路径分析器，否则跳过
+    const eventGenerator = nodeQueue[0].node.type === "Program"? new CodePathAnalyzer(...) : new NodeEventGenerator(...);
+
+    nodeQueue.forEach(...);
+
+    return lintingProblems;
+}
+```
+
+# 解答
+## 1. `eslint`是怎么默认读取`eslintrc.*`文件配置的？
+涉及引用库：
+1. `optionator` 是`js`选项解析和帮助生成库 
+1. `@eslint/eslintrc` 此存储库包含 `ESLint` 的旧 `ESLintRC` 配置文件格式
+1. `import-fresh` 当需要全新导入模块时，可用于测试目的
+
+核心流程相关：
+1. 命令入口文件是`bin/eslint.js`
+1. `eslint.js`正常流程走的是`cli/cli.js`的`cli.execute`方法（不是初始化，就走这条流程）
+1. 在`cli.execute`中，有两个处理`options`的部分，一个是`optionator`，一个是`translateOptions`
+    1. `optionator`中默认`eslintrc`是`true`
+    2. `translateOptions`返回值中`useEslintrc`就是`eslintrc`
+1. 在`cli.execute`中初始化`Eslint`
+    1. 在`Eslint`中初始化`CliEngine`
+    1. 在`CliEngine`中初始化`CascadingConfigArrayFactory`
+1. 执行`engine.lintFile`【这部分有很多分支，然是最终都会是`configArrayFactory`提供的`API`】
+    1. 走`cliEngine.executeOnFiles`
+    1. 走`fileEnumerator.iterateFiles`
+    1. 走`fileEnumerator._iterateFiles`
+    1. 走`fileEnumerator._iterateFilesWithFile`
+    1. `const config = configArrayFactory.getConfigArrayForFile(filePath)`
+
+现在说一下`CascadingConfigArrayFactory`方法，这个方法已经被抽取到单独的库`@eslint/eslintrc`中了，看`git`提交记录注释，这和`eslint`团队未来的计划有关，他们未来想要使用一种新的配置方式，目前计划正在逐渐进行中。
+
+1. 进`CascadingConfigArrayFactory.getConfigArrayForFile`
+1. 进`CascadingConfigArrayFactory._finalizeConfigArray`
+1. 如果`useEslintrc`为`true`，则进`configArrayFactory.loadInDirectory`
+1. 迭代`configFilenames`
+
+进入这个变量：
+```js
+const configFilenames = [
+    ".eslintrc.js",
+    ".eslintrc.cjs",
+    ".eslintrc.yaml",
+    ".eslintrc.yml",
+    ".eslintrc.json",
+    ".eslintrc",
+    "package.json"
+];
+```
+可以发现这个正是`eslint`使用文档里所介绍的配置文件优先度可以对应上
+
+然后就是迭代这个`configFilenames`
+1. 得到`pathname`
+1. `path.join(pathname)`得到`filePath`
+1. 判断`filePath`是否存在且是否是文件类型
+1. 调用`loadConfigFile`
+1. 根据不同文件后缀调用不同`load`方法，调用`loadJSConfigFile`【假设是`.js`文件】
+1. `importFresh(filePath)`
+

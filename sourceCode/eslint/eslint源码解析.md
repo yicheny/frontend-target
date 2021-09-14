@@ -1142,7 +1142,7 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
 }
 ```
 
-## `parse`
+### `parse`
 ```js
 /**
  * 将文本解析为 AST。 
@@ -1152,10 +1152,11 @@ _verifyWithoutProcessors(textOrSourceCode, providedConfig, providedOptions) {
  * @param {ParserOptions} providedParserOptions Options to pass to the parser
  * @param {string} filePath The path to the file being parsed.
  * @returns {{success: false, error: Problem}|{success: true, sourceCode: SourceCode}}
- * An object containing the AST and parser services if parsing was successful, or the error if parsing failed
+ * 如果解析成功，则包含 AST 和解析器服务的对象，如果解析失败则包含错误
  * @private
  */
 function parse(text, parser, providedParserOptions, filePath) {
+    //1. 去除BOM; 2. 注释Shebang
     const textToParse = stripUnicodeBOM(text).replace(astUtils.shebangPattern, (match, captured) => `//${captured}`);
     const parserOptions = Object.assign({}, providedParserOptions, {
         loc: true,
@@ -1169,12 +1170,11 @@ function parse(text, parser, providedParserOptions, filePath) {
     });
 
     /*
-     * Check for parsing errors first. If there's a parsing error, nothing
-     * else can happen. However, a parsing error does not throw an error
-     * from this method - it's just considered a fatal error message, a
-     * problem that ESLint identified just like any other.
+     * 首先检查解析错误。
+     * 如果出现解析错误，不会直接抛错，而是作为一个错误信息返回
      */
     try {
+        //这部分是SourceCode初始化需要用到的参数
         const parseResult = (typeof parser.parseForESLint === "function")
             ? parser.parseForESLint(textToParse, parserOptions)
             : { ast: parser.parse(textToParse, parserOptions) };
@@ -1219,6 +1219,208 @@ function parse(text, parser, providedParserOptions, filePath) {
             }
         };
     }
+}
+```
+
+#### 为什么需要注释`Shebang`
+在计算领域中，`Shebang`（也称为`Hashbang`）是一个由井号和叹号构成的字符序列`#!`，其出现在文本文件的第一行的前两个字符。
+
+在文件中存在`Shebang`的情况下，类`Unix`操作系统的程序加载器会分析`Shebang`后的内容，将这些内容作为解释器指令，并调用该指令，并将载有`Shebang`的文件路径作为该解释器的参数
+`
+例如，以指令`#!/bin/sh`开头的文件在执行时会实际调用`/bin/sh`程序（通常是`Bourne shell`或兼容的`shell`，例如`bash`、`dash`等）来执行。这行内容也是`shell`脚本的标准起始行。
+
+使用`#!/usr/bin/env` 脚本解释器名称是一种常见的在不同平台上都能正确找到解释器的办法。
+
+`Linux`的操作系统的文件一般是`UTF-8`编码。如果脚本文件是以`UTF-8`的`BOM`（`0xEF 0xBB 0xBF`）开头的，那么`exec`函数将不会启动`shebang`指定的解释器来执行该脚本。因此，`Linux`的脚本文件不应在文件开头包含`UTF-8`的`BOM`。
+
+由于`#`符号在许多脚本语言中都是注释标识符，`Shebang`的内容会被这些脚本解释器自动忽略。 在`#`字符不是注释标识符的语言中，例如`Scheme`，解释器也可能忽略以`#!`开头的首行内容，以提供与`Shebang`的兼容性
+
+然而，并不是每一种解释器都会自动忽略shebang行，例如对于下面的脚本，cat会把文件中的两行都输出到标准输出中。
+```
+#!/bin/cat
+Hello world!
+```
+
+在这里处理文件内容时，可以明确对于`Eslint`脚本来说`#!`是应当被忽略的内容，它不应该被当作解释器指令被执行，而且换成标准注释`//`可以确保不会被输出到编译后的代码文件中。
+
+#### `Parser`定义
+`Parser`官方默认选择的是`espree`，但是我们知道`Parser`是支持配置的，只要接口支持，你自己写一个`Parser`也可以没问题的。
+
+因而，这里我们不去看具体的某个解析器，而是看这个类型的定义：
+```js
+/**
+ * @typedef {Object} Parser
+ * @property {(text:string, options:ParserOptions) => Object} parse 全局变量的定义
+ * @property {(text:string, options:ParserOptions) => ParseResult} [parseForESLint] 将在此环境下启用的解析器选项
+ */
+```
+
+接着，我们顺着看一下`ParseResult`的定义：
+```js
+/**
+ * @typedef {Object} ParseResult
+ * @property {Object} ast The AST.
+ * @property {ScopeManager} [scopeManager] The scope manager of the AST.
+ * @property {Record<string, any>} [services] The services that the parser provides.
+ * @property {Record<string, string[]>} [visitorKeys] The visitor keys of the AST.
+ */
+```
+
+### `runRules`
+```js
+/**
+ * Runs the given rules on the given SourceCode object
+ * @param {SourceCode} sourceCode A SourceCode object for the given text
+ * @param {Object} configuredRules The rules configuration
+ * @param {function(string): Rule} ruleMapper A mapper function from rule names to rules
+ * @param {Object} parserOptions The options that were passed to the parser
+ * @param {string} parserName The name of the parser in the config
+ * @param {Object} settings The settings that were enabled in the config
+ * @param {string} filename The reported filename of the code
+ * @param {boolean} disableFixes If true, it doesn't make `fix` properties.
+ * @param {string | undefined} cwd cwd of the cli
+ * @param {string} physicalFilename The full path of the file on disk without any code block information
+ * @returns {Problem[]} An array of reported problems
+ */
+function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parserName, settings, filename, disableFixes, cwd, physicalFilename) {
+    const emitter = createEmitter();
+    const nodeQueue = [];
+    let currentNode = sourceCode.ast;
+
+    Traverser.traverse(sourceCode.ast, {
+        enter(node, parent) {
+            node.parent = parent;
+            nodeQueue.push({ isEntering: true, node });
+        },
+        leave(node) {
+            nodeQueue.push({ isEntering: false, node });
+        },
+        visitorKeys: sourceCode.visitorKeys
+    });
+
+    /*
+     * 创建一个所有规则共享方法和属性的冻结对象
+     * 所有规则上下文都将从该对象继承。
+     * 这避免了为每个规则复制所有属性一次的性能损失。
+     */
+    const sharedTraversalContext = Object.freeze(
+        Object.assign(
+            Object.create(BASE_TRAVERSAL_CONTEXT),
+            {
+                getAncestors: () => getAncestors(currentNode),
+                getDeclaredVariables: sourceCode.scopeManager.getDeclaredVariables.bind(sourceCode.scopeManager),
+                getCwd: () => cwd,
+                getFilename: () => filename,
+                getPhysicalFilename: () => physicalFilename || filename,
+                getScope: () => getScope(sourceCode.scopeManager, currentNode),
+                getSourceCode: () => sourceCode,
+                markVariableAsUsed: name => markVariableAsUsed(sourceCode.scopeManager, currentNode, parserOptions, name),
+                parserOptions,
+                parserPath: parserName,
+                parserServices: sourceCode.parserServices,
+                settings
+            }
+        )
+    );
+
+
+    const lintingProblems = [];
+
+    Object.keys(configuredRules).forEach(ruleId => {
+        const severity = ConfigOps.getRuleSeverity(configuredRules[ruleId]);
+
+        // 不加载禁用规则
+        if (severity === 0) {
+            return;
+        }
+
+        const rule = ruleMapper(ruleId);
+
+        if (rule === null) {
+            lintingProblems.push(createLintingProblem({ ruleId }));
+            return;
+        }
+
+        const messageIds = rule.meta && rule.meta.messages;
+        let reportTranslator = null;
+        const ruleContext = Object.freeze(
+            Object.assign(
+                Object.create(sharedTraversalContext),
+                {
+                    id: ruleId,
+                    options: getRuleOptions(configuredRules[ruleId]),
+                    report(...args) {
+
+                        /*
+                         * 惰性创建报告翻译器
+                         * 在绝大多数情况下，任何给定的规则都会在给定的一段代码上报告零错误。
+                         * 惰性创建一个翻译器可以避免为每个通常不会被调用的规则创建一个新的翻译器函数的性能成本。
+                         *
+                         * 使用惰性报告翻译器可将端到端性能提高约 3%
+                         * with Node 8.4.0.
+                         */
+                        if (reportTranslator === null) {
+                            reportTranslator = createReportTranslator({
+                                ruleId,
+                                severity,
+                                sourceCode,
+                                messageIds,
+                                disableFixes
+                            });
+                        }
+                        const problem = reportTranslator(...args);
+
+                        if (problem.fix && !(rule.meta && rule.meta.fixable)) {
+                            throw new Error("Fixable rules must set the `meta.fixable` property to \"code\" or \"whitespace\".");
+                        }
+                        if (problem.suggestions && !(rule.meta && rule.meta.hasSuggestions === true)) {
+                            if (rule.meta && rule.meta.docs && typeof rule.meta.docs.suggestion !== "undefined") {
+
+                                // Encourage migration from the former property name.
+                                throw new Error("Rules with suggestions must set the `meta.hasSuggestions` property to `true`. `meta.docs.suggestion` is ignored by ESLint.");
+                            }
+                            throw new Error("Rules with suggestions must set the `meta.hasSuggestions` property to `true`.");
+                        }
+                        lintingProblems.push(problem);
+                    }
+                }
+            )
+        );
+
+        const ruleListeners = createRuleListeners(rule, ruleContext);
+
+        // add all the selectors from the rule as listeners
+        Object.keys(ruleListeners).forEach(selector => {
+            emitter.on(
+                selector,
+                timing.enabled
+                    ? timing.time(ruleId, ruleListeners[selector])
+                    : ruleListeners[selector]
+            );
+        });
+    });
+
+    //如果顶级节点是"Program"，则仅运行代码路径分析器，否则跳过
+    const eventGenerator = nodeQueue[0].node.type === "Program"
+        ? new CodePathAnalyzer(new NodeEventGenerator(emitter, { visitorKeys: sourceCode.visitorKeys, fallback: Traverser.getKeys }))
+        : new NodeEventGenerator(emitter, { visitorKeys: sourceCode.visitorKeys, fallback: Traverser.getKeys });
+
+    nodeQueue.forEach(traversalInfo => {
+        currentNode = traversalInfo.node;
+
+        try {
+            if (traversalInfo.isEntering) {
+                eventGenerator.enterNode(currentNode);
+            } else {
+                eventGenerator.leaveNode(currentNode);
+            }
+        } catch (err) {
+            err.currentNode = currentNode;
+            throw err;
+        }
+    });
+
+    return lintingProblems;
 }
 ```
 
@@ -1270,3 +1472,7 @@ const {
 # 资料
 - [`eslint v7.32.0`](https://github.com/eslint/eslint/tree/v7.32.0#installation-and-usage)
 - [`@eslint/eslintrc v0.4.3`](https://github.com/eslint/eslintrc/tree/v0.4.3)
+- [`wiki-Shebang`](https://zh.wikipedia.org/wiki/Shebang)
+- [`BOM`](https://zh.wikipedia.org/wiki/%E4%BD%8D%E5%85%83%E7%B5%84%E9%A0%86%E5%BA%8F%E8%A8%98%E8%99%9F)
+- [`optionator`](https://github.com/gkz/optionator)
+- [`import-fresh`](https://github.com/sindresorhus/import-fresh)
