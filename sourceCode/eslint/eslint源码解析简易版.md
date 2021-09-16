@@ -10,8 +10,10 @@
 预期是阅读此文档后至少对`eslint`的流程有个大致思路。
 
 # 阅读能力要求
-1. 掌握`eslint`使用【主要是配置这一块】
 1. `javascript`基本语法
+1. 掌握`eslint`使用【主要是配置这一块】
+
+如果对`eslint`配置不熟悉也没问题，我在下面也写了配置的用法。
 
 ## `eslint`基本配置
 > `eslint`配置源有两种：一个是文件中代码注释进行配置，一个是通过文件进行配置，这里只以文件配置进行说明，另外支持的配置文件也有很多类型，这里只以`eslintrc.js`进行说明
@@ -25,6 +27,16 @@
 ```js
 //.eslintrc.js
 module.exports = {
+    parserOptions:{ //指定支持的javascript语言选项
+        ecmaVersion : 2020,//es版本，3、5、6、8、9、10或者2015、2016这种
+        sourceType : 'module', //'script'或'module'，代码类型
+        ecmaFeatures: {
+            globalReturn : true, //允许在全局作用域下使用return
+            impliedStrict : true, //开启全局严格模式，必须是es5版本及以上
+            jsx : true, //开启jsx（注意，开启jsx不等于支持react，如果想要支持react语法官方建议使用rslint-plugin-react
+            experimentalObjectRestSpread : true //支持解构语法
+        }
+    },
     parser:`esprima`,//解析器，目前支持：babel-eslint、@typescripts-eslint/parser、esprima、espree【官方默认】
     plugins:['a-plugin'],//插件，提供processor、rule、configs【通过extends使用】等...
     processor:"a-pulgin/markdown-processor",//处理器：用于从另一种文件中提取代码，然后让`eslint`检测
@@ -41,15 +53,20 @@ module.exports = {
         var1:"writable"
     },
     rules:{//开启规则，决定错误级别
-        eqeqeq:true,
+        eqeqeq:2,
     }
     settings:{//共享设置，将被提供给每一个被执行的规则
         "sharedData":"hello"
     },
-    root:true,//与eslint配置文件的查找相关，有些复杂，之后专门说一下
-    extends："eslint:recommended",//继承文件规则（配置文件的路径、可共享配置的名称、字符串数组），这里也在下面单独说一下
+    root: true,//与eslint配置文件的查找相关，有些复杂，之后专门说一下
+    extends: "eslint:recommended",//继承文件规则（配置文件的路径、可共享配置的名称、字符串数组），这里也在下面单独说一下
+    noInlineConfig: false, //是否禁用内联配置
 }
 ```
+
+源码里定义的配置数据接口：
+
+![ConfigData API]()
 
 ## 配置文件查找规则
 ### 场景1
@@ -58,7 +75,7 @@ module.exports = {
 your-project
 ├─┬ lib
 │ ├── source.js
-│ └── .eslintrc
+│ └── .eslintrc --> 生效
 ```
 这种情况下`lib/`下的文件会使用`lib/.eslintrc`作为配置文件使用。
 
@@ -66,7 +83,7 @@ your-project
 现在将`.eslintrc`换个位置，以便可以让更多目录使用
 ```
 your-project
-├── .eslintrc
+├── .eslintrc  --> 生效
 ├─┬ lib
 │ └── source.js
 └─┬ tests
@@ -80,12 +97,12 @@ your-project
 如果`tests/`目录下有一些独立的配置，但是希望复用`your-project/.eslintrc`的配置，那么可以在其目录下再添加一个`.eslintrc`
 ```
 your-project
-├── .eslintrc
+├── .eslintrc  --> 生效
 ├─┬ lib
 │ └── source.js
 └─┬ tests
   ├── test.js
-  └── .eslintrc
+  └── .eslintrc  --> 生效
 ```
 这个时候如果`your-project/.eslintrc`和`tests/.eslintrc`规则冲突，则优先使用`tests/.eslintrc`规则【或者你也可以认为是当前目录规则覆盖了外层目录规则】
 
@@ -101,7 +118,7 @@ your-project
 │ └── .eslintrc
 └─┬ fixs
   ├── fix.js
-  └── .eslintrc
+  └── .eslintrc  --> 生效
 ```
 此时可以在`fixs/.eslintrc`的配置文件中添加`root:true`这一项规则，这样`eslint`会停止向外层查找
 
@@ -124,11 +141,74 @@ your-project
 
 > 关于插件的详细说明请见[插件指南](https://eslint.bootcss.com/docs/developer-guide/working-with-plugins)
 
+### 定义
 首先明确一个概念：`eslint`并没有`plugin API`（这个也是Nicholas C. Zakas说的），我们拥有的是一个插件格式，`Eslint`一直将插件视为命名事物的集合，它提供`rule`、`processor`、`config`这些内容给`Eslint`进行使用，**插件本身什么也不会做，插件只是提供配置，由`Eslint`获取配置进行处理**
 
-现在我们看一下`plugin`格式可以提供哪些内容。
+我们看下源码里对于`Plugin`类型的定义：
 
-## 关于`extends`
+![Plugin API]()
+
+`Plugin`类型的定义将在接下来插件例子里得到体现。
+
+### 命名
+`eslint`的插件命名格式必须是`eslint-plugin-<plugin-name>`或`@<scope>/eslint-plugin-<plugin-name>`
+
+### 提供内容
+> 注意：这些内容插件不需要全部提供，开发者可以根据需要提供其中一项或多项
+```js
+module.exports = {
+    rules: { //可以提供额外的规则，使用可以不加前缀，以`plugin-name/rule-name`的形式使用
+        "dollar-sign":{//规则名
+            create:function(context){}
+        }
+    },
+    environments: { //可以提供额外的环境，可以定义`globals`、`parserOptions`， 使用时可以不加前缀，以`插件名/环境名`的方式调用
+        jquery: { //环境名
+            globals: {
+                $: false //true允许全局覆盖，false不允许全局覆盖
+            },
+            parserOptions: { 
+
+            }
+        }
+    },
+    processors: { //可以提供处理器
+        //需要符合这种接口
+        '.md': { //处理的文件后缀，比如.js、.jsx、.html等
+            preprocess: (text,filename) => {//文件内容，文件名
+                //将需要字符部分拆离出来 
+                return [string] //将字符块数组返回---之所以是数组是因为一份文档可以剥离多份内容，比如说一份`doc.md`可以存在多份代码块
+            },
+            postprocess: (messages,filename) => {//检测信息（这里是一个二维数组）、文件
+                // 这里我特别说一下messages，这里涉及一点源码，直接说原理比较好解释，展示下伪代码：
+                // messages = preprocess(text, filename).map(block => verify(block));
+                // postprocess(messages,filename);
+
+                // 首先是preprocess返回的是代码块组成的数组，每个代码块我们都进行检测，得到一个一维数组，这个数组包含对这个代码块的所有检测信息
+                // 每个检测信息对象是LintMessage类型，每个代码块得到的检测结果是LintMessage[]
+                // 然后我们知道preprocess是代码块组成的数组，那么messages就会是LintMessage[][]
+                // postprocess返回值需要是LintMessage[]，可以认为是将二维数组打平，具体打平操作由插件开发者决定
+
+                return messages[0] //返回值是一个一维数组
+            },
+            supportsAutoFix: true, //是否支持自动修复
+        }
+    },
+    configs: { //提供一些配置以供扩展，比如以 extends:["plugin":customPlugin/customConfig] 进行扩展
+        customConfig: {
+            plugins:['myPlugin'],
+            env:["browser"],
+            rules:[...],
+        }
+    },
+    peerDependencies: { //依赖
+        "eslint": ">=0.8.0"
+    }
+}
+```
+![Environment API]()
+![Processor API]()
+![LintMessage API]()
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
@@ -556,8 +636,10 @@ function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parser
 }
 ```
 
+# 专题：`@eslint/eslint`
+
 # 解答
-## 1. `eslint`是怎么默认读取`eslintrc.*`文件配置的？
+## `eslint`是怎么默认读取`eslintrc.*`文件配置的？
 涉及引用库：
 1. `optionator` 是`js`选项解析和帮助生成库 
 1. `@eslint/eslintrc` 此存储库包含 `ESLint` 的旧 `ESLintRC` 配置文件格式
@@ -621,13 +703,35 @@ const configFilenames = [
 
 然后`eslint/eslintrc`这个项目他也是核心开发者，并且是提交量最多的人，目前官方配置解析库使用的就是这个。
 
+### 为什么需要新方案？
 关于目前`eslintrc.*`方法存在的问题可以看这里[Config File Simplification](https://github.com/eslint/rfcs/pull/9)
 
+为什么需要新的配置方案？
+
+现有方案里的配置并不是执行时真正使用的配置数据，现在的逻辑是这样的：初始数据【在开发项目里提供】 => 扩展、覆盖、级联合并【由`Eslint`在内部处理】 => 真正使用的数据
+
+这带来了一些问题：
+1. 从提供的配置文件很难直接看出最终使用的配置，这一点可以通过`--print-config`缓解
+1. 扩展、覆盖、级联合并的细节在`Eslint`的内部，这使得配置时的负担增加了，因为配置者需要了解`Eslint`背后的原理
+1. 现在这种将合并放在内部进行统一处理的方案非常复杂，`Nicolas C. Zakas`将两份配置方案抽离出来成了独立的库，级联配置数组的库的复杂度和代码量都远远超过平铺方案，因为现有方案是集中统一处理，需要考虑所有情况，然后现在的方案还需要处理文件加载，所以非常复杂。而新方案只是提供一些方法，让开发者自己操作，方法之间相对独立，不是一个大流程，只需要保证这些基础方法正常就可以了。
+1. 现在这套容易出错，而且一旦出错不容易处理，因为处理配置部分在库上，而不是本地
+
+新的配置方案是什么呢？`Eslint`提供了一个库[`@humanwhocodes/config-array`](https://github.com/humanwhocodes/config-array)，开发者自己用这个库处理好配置数据给`Eslint`，就是这样，将处理的权力给开发者。好处有很多：
+1. 可以直接在本地拿到最终配置，这样本地也可以写一些相关测试了
+1. 处理的部分在本地，这样就不需要了解`Eslint`的合并原理了，处理逻辑就在本地
+1. `Eslint`更纯粹了，因为它不再负责配置的打平处理、插件文件加载等处理了
+1. 不容易出错，即使出错了也容易处理，因为逻辑就在本地，无论是调试还是修改都简单很多
+1. 数据处理逻辑也变得简单了，在`Eslint`里处理需要考虑所有情况，代码量极大，逻辑也很复杂，而本地则没有这种负担，我们只需要考虑自己项目中的配置合并、扩展和覆盖即可
+1. 配置本身也会变得简单，一些用于扩展、合并、覆盖的键，比如`extends`、`plugins`、`overrides`这些会被移除【其实这些本身就不是必要的】
+
+### 新的配置方案
 新的配置库见[`@humanwhocodes/config-array`](https://github.com/humanwhocodes/config-array)
 
 目前计划进度见[`Implement Flat Config #13481`](https://github.com/eslint/eslint/issues/13481)
 
-这个计划目前依旧在实现中，等待后续发展。
+这个计划目前依旧在实现中，关注后续发展。
+
+## `extends`是怎么生效的？
 
 # 资料
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)
