@@ -1,11 +1,14 @@
 [TOC]
 
 # 场景
-附带完整源码的解析有着太多细节，而且文档我还也没整理顺序，阅读起来相对困难。
+附带完整源码的解析只关注核心执行流程，有着太多细节，而且没有调整章节顺序，阅读起来相对困难。
 
-简易版做了一些整理，而且展示的代码为了方便理解也做了处理：
+简易版做了一些整理，为了方便理解做了如下处理：
 1. 精简代码，删减掉不重要的代码
 1. 只是阐述思路，以伪代码或无代码表现
+1. 添加了对`eslint`配置的说明
+1. 添加了豆知识说明（Shebang、BOM、glob pattern等）
+1. 添加了专题说明
 
 预期是阅读此文档后至少对`eslint`的流程有个大致思路。
 
@@ -13,7 +16,7 @@
 1. `javascript`基本语法
 1. 掌握`eslint`使用【主要是配置这一块】
 
-如果对`eslint`配置不熟悉也没问题，我在下面也写了配置的用法。
+如果对`eslint`配置不熟悉也没问题，我在下面写了配置的用法。
 
 ## `eslint`基本配置
 > `eslint`配置源有两种：一个是文件中代码注释进行配置，一个是通过文件进行配置，这里只以文件配置进行说明，另外支持的配置文件也有很多类型，这里只以`eslintrc.js`进行说明
@@ -350,6 +353,8 @@ constructor(providedOptions) {
 
 这里创建的私有数据先不深入，在接下来的使用到这些数据的时候，我们再进行解读。
 
+不过这里我要说一下：`CascadingConfigArrayFactory`这个类非常重要，我在下面用了一个专题特别进行说明，这个类的主要目的就是用于处理级联配置，如果对这一块不了解或者感兴趣的，可以看一下这个专题。
+
 现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
 
 ![](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
@@ -637,6 +642,43 @@ function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parser
 ```
 
 # 专题：`@eslint/eslint`
+## `CascadingConfigArrayFactory`
+职责：处理配置文件的级联。
+
+描述：这个类提供枚举每个文件的功能，这些文件与给定的`glob`模式和配置匹配
+
+# 豆知识
+## `Shebang`
+在计算领域中，`Shebang`（也被称为`Hashbang`、`sh-bang`）是一个由井号和叹号构成的字符序列`#!`，其出现在文本文件的第一行的前两个字符。
+
+### 为什么需要注释`Shebang`
+在`parse`方法里对`Shebang`进行了替换，`#!` => `//`
+
+在文件中存在`Shebang`的情况下，类`Unix`操作系统的程序加载器会分析`Shebang`后的内容，将这些内容作为解释器指令，并调用该指令，并将载有`Shebang`的文件路径作为该解释器的参数
+`
+例如，以指令`#!/bin/sh`开头的文件在执行时会实际调用`/bin/sh`程序（通常是`Bourne shell`或兼容的`shell`，例如`bash`、`dash`等）来执行。这行内容也是`shell`脚本的标准起始行。
+
+使用`#!/usr/bin/env` 脚本解释器名称是一种常见的在不同平台上都能正确找到解释器的办法。
+
+`Linux`的操作系统的文件一般是`UTF-8`编码。如果脚本文件是以`UTF-8`的`BOM`（`0xEF 0xBB 0xBF`）开头的，那么`exec`函数将不会启动`shebang`指定的解释器来执行该脚本。因此，`Linux`的脚本文件不应在文件开头包含`UTF-8`的`BOM`。
+
+由于`#`符号在许多脚本语言中都是注释标识符，`Shebang`的内容会被这些脚本解释器自动忽略。 在`#`字符不是注释标识符的语言中，例如`Scheme`，解释器也可能忽略以`#!`开头的首行内容，以提供与`Shebang`的兼容性
+
+然而，并不是每一种解释器都会自动忽略`shebang`行，例如对于下面的脚本，`cat`会把文件中的两行都输出到标准输出中。
+```
+#!/bin/cat
+Hello world!
+```
+
+在这里处理文件内容时，可以明确对于`Eslint`脚本来说`#!`是应当被忽略的内容，它不应该被当作解释器指令被执行，而且换成标准注释`//`可以确保不会被输出到编译后的代码文件中。
+
+## `BOM`
+`BOM`全称`byte-order mark`（字节顺序标记）
+
+## `glob pattern`【命令行通配符】
+在计算机编程中，`glob pattern`用通配符指定文件名集。
+
+具体语法见 [阮一峰 命令行通配符教程](http://www.ruanyifeng.com/blog/2018/09/bash-wildcards.html)
 
 # 解答
 ## `eslint`是怎么默认读取`eslintrc.*`文件配置的？
@@ -736,3 +778,10 @@ const configFilenames = [
 # 资料
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)
 - [插件指南](https://eslint.bootcss.com/docs/developer-guide/working-with-plugins)
+- [`wiki-Shebang`](https://zh.wikipedia.org/wiki/Shebang)
+- [`BOM`](https://zh.wikipedia.org/wiki/%E4%BD%8D%E5%85%83%E7%B5%84%E9%A0%86%E5%BA%8F%E8%A8%98%E8%99%9F)
+- [`glob (programming)`](https://en.wikipedia.org/wiki/Glob_(programming))
+- [`npm optionator`](https://github.com/gkz/optionator)
+- [`npm import-fresh`](https://github.com/sindresorhus/import-fresh)
+- [`npm debug`](https://github.com/visionmedia/debug/blob/master/test.js)
+- [阮一峰 命令行通配符教程](http://www.ruanyifeng.com/blog/2018/09/bash-wildcards.html)
