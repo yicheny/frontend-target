@@ -236,7 +236,7 @@ module.exports = {
 
 入口是`bin/eslint.js`文件
 
-![](https://pic.imgdb.cn/item/613719e144eaada7398a9c46.jpg)
+![package.json#bin](https://pic.imgdb.cn/item/613719e144eaada7398a9c46.jpg)
 
 # `bin/eslint.js`
 ```js
@@ -252,7 +252,7 @@ module.exports = {
 
 可以发现，核心内容在`../lib/cli`文件里：
 
-![](https://pic.imgdb.cn/item/61371a3344eaada7398b36a6.jpg)
+![bin/eslint#main](https://pic.imgdb.cn/item/61371a3344eaada7398b36a6.jpg)
 
 # `lib/cli.js`
 ```js
@@ -271,7 +271,7 @@ async execute(args, text) {
 
 流程示意图：
 
-![](https://pic.imgdb.cn/item/6138268644eaada73959cb1f.jpg)
+![cli.execute](https://pic.imgdb.cn/item/61454f092ab3f51d91fca2dc.jpg)
 
 ## `lint`核心处理
 ```js
@@ -289,7 +289,7 @@ if (options.fix) {
 }
 ```
 
-![](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
+![lint核心处理](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
 
 这部分代码里有三个点我认为较为重要，我们接下来解读这三个点：
 1. 初始化`Eslint`
@@ -322,7 +322,7 @@ class ESLint {
 }
 ```
 
-![](https://pic.imgdb.cn/item/613984e944eaada73961c9b1.jpg)
+![ESLint#constructor](https://pic.imgdb.cn/item/613984e944eaada73961c9b1.jpg)
 
 接下来进入`CLIEngine`的`constructor`，看看它在初始化的时候做了什么。
 
@@ -349,7 +349,7 @@ constructor(providedOptions) {
 }
 ```
 
-![](https://pic.imgdb.cn/item/6139851144eaada7396218f9.jpg)
+![CliEngine#constructor](https://pic.imgdb.cn/item/6139851144eaada7396218f9.jpg)
 
 这里创建的私有数据先不深入，在接下来的使用到这些数据的时候，我们再进行解读。
 
@@ -357,7 +357,7 @@ constructor(providedOptions) {
 
 现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
 
-![](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
+![lint核心处理2](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
 
 ## `engine.lintFiles(files)`
 ```js
@@ -392,7 +392,7 @@ executeOnFiles(patterns) {
 
 流程图：
 
-![](https://pic.imgdb.cn/item/6139d62844eaada7390532f2.jpg)
+![cliEngine.executeOnFiles](https://pic.imgdb.cn/item/6139d62844eaada7390532f2.jpg)
 
 有两个地方我比较关心，一个是迭代源代码文件进行的处理，一个是返回结果，首先从迭代源代码文件部分开始看吧
 
@@ -422,7 +422,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 }
 ```
 
-![](https://pic.imgdb.cn/item/613ace8344eaada739684d9d.jpg)
+![迭代源代码文件](https://pic.imgdb.cn/item/613ace8344eaada739684d9d.jpg)
 
 这里值得关注的是`do lint`部分，调用了`verifyText`方法，我们看一下。
 
@@ -444,7 +444,7 @@ function verifyText({...}) {
 }
 ```
 
-![](https://pic.imgdb.cn/item/613ecafd44eaada739b8e077.jpg)
+![verifyText](https://pic.imgdb.cn/item/61454f8f2ab3f51d91fd4a75.jpg)
 
 接下来我们看一下`linter.verifyAndFix`这个方法
 
@@ -466,6 +466,8 @@ verifyAndFix(text, config, options) {
 }
 ```
 这里比较重要的是循环修复和生成`LintMessage[]`信息这两个部分。
+
+![linter.verifyAndFix](https://pic.imgdb.cn/item/614552772ab3f51d91010fd2.jpg)
 
 我们先看一下循环修复文件的代码
 
@@ -494,7 +496,12 @@ do {
 ```
 这里思路也不是很复杂，也有两个地方我想看一下：`this.verify`、`SourceCoceFixer.applyFixes`
 
-我们先看`verify`方法.
+我们先看`SourceCoceFixer.applyFixes`方法.
+
+## `SourceCoceFixer.applyFixes`
+```js
+
+```
 
 ## `linter.verify`
 ```js
@@ -774,6 +781,24 @@ const configFilenames = [
 这个计划目前依旧在实现中，关注后续发展。
 
 ## `extends`是怎么生效的？
+
+# 涉及一些依赖库
+只做简单描述，每个库的具体资料我放到“资料”部分了，想要深入的了解可以进入链接
+
+## `optionator`
+简化命令行参数控制
+
+## `debug`
+方便控制`debug`
+
+## `import-fresh`
+保证每次引入文件都是全新的
+
+## `@eslint/eslintrc`
+级联配置方案
+
+## `@humanwhocodes/config-array`
+平铺配置方案
 
 # 资料
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)

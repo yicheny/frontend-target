@@ -190,7 +190,7 @@ const cli = {
 
 流程示意图：
 
-![](https://pic.imgdb.cn/item/6138268644eaada73959cb1f.jpg)
+![](https://pic.imgdb.cn/item/61454f092ab3f51d91fca2dc.jpg)
 
 ## 核心处理
 ```js
@@ -650,7 +650,7 @@ function verifyText({
 }
 ```
 
-![](https://pic.imgdb.cn/item/613ecafd44eaada739b8e077.jpg)
+![](https://pic.imgdb.cn/item/61454f8f2ab3f51d91fd4a75.jpg)
 
 接下来我们看一下`linter.verifyAndFix`这个方法
 
@@ -743,6 +743,110 @@ verifyAndFix(text, config, options) {
  * @property {0|1|2} severity The severity of this message.
  * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] Information for suggestions.
  */
+```
+
+## `SourceCoceFixer.applyFixes`
+```js
+/**
+ * 将消息指定的fixes应用于给定文本。 
+ * 尝试智能修复，不会在文本中的同一区域应用fixes。
+ * @param {string} sourceText 要应用更改的文本。
+ * @param {Message[]} messages ESLint 报告的消息数组。
+ * @param {boolean|Function} [shouldFix=true] 确定是否应修复每条消息
+ * @returns {Object} 包含固定文本和任何未固定消息的对象。
+ */
+SourceCodeFixer.applyFixes = function(sourceText, messages, shouldFix) {
+    debug("Applying fixes");
+
+    //shouldFix为false，不尝试修复
+    if (shouldFix === false) {
+        debug("shouldFix parameter was false, not attempting fixes");
+        return {
+            fixed: false,
+            messages,
+            output: sourceText
+        };
+    }
+
+    // clone the array
+    const remainingMessages = [],
+        fixes = [],
+        bom = sourceText.startsWith(BOM) ? BOM : "",
+        text = bom ? sourceText.slice(1) : sourceText;
+    let lastPos = Number.NEGATIVE_INFINITY,
+        output = bom;
+
+    /**
+     * 尝试使用problem的"fix"。
+     * @param {Message} problem 应用修复的消息对象
+     * @returns {boolean} 修复是否成功应用
+     */
+    function attemptFix(problem) {
+        const fix = problem.fix;
+        const start = fix.range[0];
+        const end = fix.range[1];
+
+        // 如果它重叠或它是负范围，则将其保留为problem
+        if (lastPos >= start || start > end) {
+            remainingMessages.push(problem);
+            return false;
+        }
+
+        // Remove BOM.
+        if ((start < 0 && end >= 0) || (start === 0 && fix.text.startsWith(BOM))) {
+            output = "";
+        }
+
+        // Make output to this fix.
+        output += text.slice(Math.max(0, lastPos), Math.max(0, start));
+        output += fix.text;
+        lastPos = end;
+        return true;
+    }
+
+    messages.forEach(problem => {
+        if (Object.prototype.hasOwnProperty.call(problem, "fix")) {
+            fixes.push(problem);
+        } else {
+            remainingMessages.push(problem);
+        }
+    });
+
+    if (fixes.length) {
+        debug("Found fixes to apply");
+        let fixesWereApplied = false;
+
+        for (const problem of fixes.sort(compareMessagesByFixRange)) {
+            if (typeof shouldFix !== "function" || shouldFix(problem)) {
+                attemptFix(problem);
+
+                /*
+                 * The only time attemptFix will fail is if a previous fix was
+                 * applied which conflicts with it.  So we can mark this as true.
+                 */
+                fixesWereApplied = true;
+            } else {
+                remainingMessages.push(problem);
+            }
+        }
+        output += text.slice(Math.max(0, lastPos));
+
+        return {
+            fixed: fixesWereApplied,
+            messages: remainingMessages.sort(compareMessagesByLocation),
+            output
+        };
+    }
+
+    debug("No fixes to apply");
+    return {
+        fixed: false,
+        messages,
+        output: bom + text
+    };
+
+};
+
 ```
 
 ## `linter.verify`
