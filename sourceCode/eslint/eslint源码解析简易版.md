@@ -5,7 +5,7 @@
 
 简易版做了一些整理，为了方便理解做了如下处理：
 1. 精简代码，删减掉不重要的代码
-1. 只是阐述思路，以伪代码或示意图表现
+1. 只是阐述思路，以伪代码或无代码表现
 1. 添加了对`eslint`配置的说明
 1. 添加了豆知识说明（Shebang、BOM、glob pattern等）
 1. 添加了专题说明
@@ -66,10 +66,6 @@ module.exports = {
     noInlineConfig: false, //是否禁用内联配置
 }
 ```
-
-源码里定义的配置数据接口：
-
-![ConfigData API]()
 
 ## 配置文件查找规则
 ### 场景1
@@ -149,7 +145,15 @@ your-project
 
 我们看下源码里对于`Plugin`类型的定义：
 
-![Plugin API]()
+```js
+/**
+ * @typedef {Object} Plugin
+ * @property {Record<string, ConfigData>} [configs] The definition of plugin configs.
+ * @property {Record<string, Environment>} [environments] The definition of plugin environments.
+ * @property {Record<string, Processor>} [processors] The definition of plugin processors.
+ * @property {Record<string, Function | Rule>} [rules] The definition of plugin rules.
+ */
+```
 
 `Plugin`类型的定义将在接下来插件例子里得到体现。
 
@@ -209,9 +213,97 @@ module.exports = {
     }
 }
 ```
-![Environment API]()
-![Processor API]()
-![LintMessage API]()
+
+### 源码中的定义
+```js
+/**
+ * @typedef {Object} Environment
+ * @property {Record<string, GlobalConf>} [globals] The definition of global variables.
+ * @property {ParserOptions} [parserOptions] The parser options that will be enabled under this environment.
+ */
+
+/**
+ * @typedef {Object} Processor
+ * @property {(text:string, filename:string) => Array<string | { text:string, filename:string }>} [preprocess] The function to extract code blocks.
+ * @property {(messagesList:LintMessage[][], filename:string) => LintMessage[]} [postprocess] The function to merge messages.
+ * @property {boolean} [supportsAutofix] If `true` then it means the processor supports autofix.
+ */
+
+/**
+ * @typedef {Object} LintMessage
+ * @property {number|undefined} column The 1-based column number.
+ * @property {number} [endColumn] The 1-based column number of the end location.
+ * @property {number} [endLine] The 1-based line number of the end location.
+ * @property {boolean} fatal If `true` then this is a fatal error.
+ * @property {{range:[number,number], text:string}} [fix] Information for autofix.
+ * @property {number|undefined} line The 1-based line number.
+ * @property {string} message The error message.
+ * @property {string|null} ruleId The ID of the rule which makes this message.
+ * @property {0|1|2} severity The severity of this message.
+ * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] Information for suggestions.
+ */
+```
+
+## `Rule`
+`Rule`是`eslint`的核心组成部分，对于源码的解析重点正是`Rule`
+
+`Rule`的作用大概来说是校验文档中的代码，如果异常则进行提示，有些`Rule`会提供修复函数，可以对异常代码进行修复。
+
+在了解作用之后，还需要的是`Rule`的定义，`Rule`是什么样的？
+
+这样问或许有些抽象，下面我们来写一个`Demo`，看看怎么定义一个`Rule`
+
+### `基本格式`
+```js
+module.exports = {
+    meta: {
+        //type有三种
+        //"problem"  问题类规则识别导致错误的代码
+        //"suggestion" 建议类规则识别**容易**造成问题的代码
+        //"layout" 识别风格相关代码，比如空格，分号这些
+        type: "suggestion",
+        docs: {
+            description: "disallow unnecessary semicolons",
+            category: "Possible Errors",
+            recommended: true,
+            url: "https://eslint.org/docs/rules/no-extra-semi"
+        },
+        fixable: "code",
+        schema: [] // no options
+    },
+    create: function(context) {
+        return {
+            // callback functions
+        };
+    }
+};
+```
+
+### 源码中的定义
+源码中对`Rule`的定义
+```js
+/**
+ * @typedef {Object} Rule
+ * @property {Function} create The factory of the rule.
+ * @property {RuleMeta} meta The meta data of the rule.
+ */
+```
+
+这里我们可以知道`Rule`是一个对象，它有两个属性`create`，`meta`.
+
+`meta`类型的定义：
+```js
+/**
+ * @typedef {Object} RuleMeta
+ * @property {boolean} [deprecated] If `true` then the rule has been deprecated.
+ * @property {RuleMetaDocs} docs The document information of the rule.
+ * @property {"code"|"whitespace"} [fixable] The autofix type.
+ * @property {Record<string,string>} [messages] The messages the rule reports.
+ * @property {string[]} [replacedBy] The IDs of the alternative rules.
+ * @property {Array|Object} schema The option schema of the rule.
+ * @property {"problem"|"suggestion"|"layout"} type The rule type.
+ */
+```
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
@@ -1099,6 +1191,7 @@ const configFilenames = [
 # 资料
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)
 - [插件指南](https://eslint.bootcss.com/docs/developer-guide/working-with-plugins)
+- [规则指南](https://cn.eslint.org/docs/developer-guide/working-with-rules)
 - [`wiki-Shebang`](https://zh.wikipedia.org/wiki/Shebang)
 - [`BOM`](https://zh.wikipedia.org/wiki/%E4%BD%8D%E5%85%83%E7%B5%84%E9%A0%86%E5%BA%8F%E8%A8%98%E8%99%9F)
 - [`glob (programming)`](https://en.wikipedia.org/wiki/Glob_(programming))
