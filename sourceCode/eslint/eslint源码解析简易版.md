@@ -5,7 +5,7 @@
 
 简易版做了一些整理，为了方便理解做了如下处理：
 1. 精简代码，删减掉不重要的代码
-1. 只是阐述思路，以伪代码或无代码表现
+1. 只是阐述思路，以伪代码或示意图表现
 1. 添加了对`eslint`配置的说明
 1. 添加了豆知识说明（Shebang、BOM、glob pattern等）
 1. 添加了专题说明
@@ -494,13 +494,104 @@ do {
     已修复 && 通过次数小于最大值【10】
 );
 ```
-这里思路也不是很复杂，也有两个地方我想看一下：`this.verify`、`SourceCoceFixer.applyFixes`
+这里思路也不是很复杂，也有两个地方我想看一下：`this.verify`、`SourceCodeFixer.applyFixes`
 
-我们先看`SourceCoceFixer.applyFixes`方法.
+我们先看`SourceCodeFixer.applyFixes`方法.
 
-## `SourceCoceFixer.applyFixes`
+## `SourceCodeFixer.applyFixes`
 ```js
+/**
+ * 将消息指定的fixes应用于给定文本。 
+ * 尝试智能修复，不会在文本中的同一区域应用fixes。
+ * @param {string} sourceText 要应用更改的文本。
+ * @param {Message[]} messages ESLint 报告的消息数组。
+ * @param {boolean|Function} [shouldFix=true] 确定是否应修复每条消息
+ * @returns {Object} 包含固定文本和任何未固定消息的对象。
+ */
+SourceCodeFixer.applyFixes = function(sourceText, messages, shouldFix) {
+    //shouldFix为false，不尝试修复
+    if (shouldFix === false) return { fixed: false, messages, output: sourceText };
 
+    // clone the array
+    const remainingMessages = [],
+        fixes = [],
+        bom = sourceText.startsWith(BOM) ? BOM : "",
+        text = bom ? sourceText.slice(1) : sourceText;
+    let lastPos = Number.NEGATIVE_INFINITY, //初始设为负无穷大
+        output = bom;
+
+    //如果problem对象有fix属性，将problem放到fixes数组，否则将其放到remainingMessages数组
+    messages.forEach(problem => {...});
+
+    //进行修复
+    if (fixes.length) return {...}
+    
+    //没有可用修复
+    return { fixed: false, messages, output: bom + text };
+};
+```
+
+### 进行修复
+```js
+let fixesWereApplied = false;//标识尚未修复
+
+//先为message排序，按fix范围从前往后排列，然后进行迭代【这里problem就是message】
+for (const problem of fixes.sort(compareMessagesByFixRange)) { 
+    //如果shouldFix不是函数 或者 should(problem)结果为true 则进行修复
+    if (typeof shouldFix !== "function" || shouldFix(problem)) {
+        attemptFix(problem);//应用修复
+
+        //修复失败的原因只会是和之前的修复冲突了，
+        //所以无论修复成功还是失败，我们都将其标记为true，表示已经进行修复
+        fixesWereApplied = true;
+    } else {
+        remainingMessages.push(problem); //不进行修复的problem放到remainingMessages数组
+    }
+}
+output += text.slice(Math.max(0, lastPos));
+
+return {
+    fixed: fixesWereApplied,
+    messages: remainingMessages.sort(compareMessagesByLocation),
+    output
+};
+```
+
+### `attemptFix`
+```js
+/**
+ * 尝试使用problem的"fix"。
+ * @param {Message} problem 应用修复的消息对象
+ * @returns {boolean} 修复是否成功应用
+ */
+function attemptFix(problem) {
+    const fix = problem.fix;
+    const start = fix.range[0];
+    const end = fix.range[1];
+
+    // 如果开始修复的位置在上一次修复结束的位置之前，
+    // 或者开始修复的位置在结束修复的位置之前
+    // 则不进行修复
+    if (lastPos >= start || start > end) {
+        remainingMessages.push(problem);
+        return false;
+    }
+
+    // 如果开始修复的位置小于0，且结束位置大于等于0
+    // 或者开始修复的位置等于0，且fix.text是以BOM开始的
+    // 则设置output = ""; (移除BOM)
+    if ((start < 0 && end >= 0) || (start === 0 && fix.text.startsWith(BOM))) {
+        output = "";
+    }
+
+    // 应用fix到output上
+    // 在上一次的基础上，从源码中摘取不需要修复的部分，添加到output
+    output += text.slice(Math.max(0, lastPos), Math.max(0, start))
+    // 将修复的内容添加到output
+    output += fix.text; 
+    lastPos = end;//更新修复结束的位置
+    return true;
+}
 ```
 
 ## `linter.verify`
@@ -590,7 +681,7 @@ if (!slots.lastSourceCode) {
 ```
 可以看到有两个点值得关注：`parse`、`SourceCode`，我们先看`parse`
 
-### `parse`
+#### `parse`
 ```js
 function parse(text, parser, providedParserOptions, filePath) {
     //1. 去除BOM; 2. 注释Shebang
@@ -623,6 +714,119 @@ function parse(text, parser, providedParserOptions, filePath) {
 ```
 可以看到，即使是通过`parse`方法，`slots.lastSourceCode`得到的依旧是`SourceCode`实例。
 
+### `SourceCode`--分析中
+```js
+class SourceCode extends TokenStore {
+    /**
+     * 表示解析的源代码.
+     * @param {string|Object} textOrConfig The source code text or config object.
+     * @param {string} textOrConfig.text The source code text.
+     * @param {ASTNode} textOrConfig.ast 代表代码的 AST 的 Program 节点。 这个 AST 应该从 BOM 被剥离的文本中创建
+     * @param {Object|null} textOrConfig.parserServices The parser services.
+     * @param {ScopeManager|null} textOrConfig.scopeManager The scope of this source code.
+     * @param {Object|null} textOrConfig.visitorKeys The visitor keys to traverse AST.
+     * @param {ASTNode} [astIfNoConfig] 代表代码的 AST 的 Program 节点。 这个 AST 应该从 BOM 被剥离的文本中创建
+     */
+    constructor(textOrConfig, astIfNoConfig) {
+        let text, ast, parserServices, scopeManager, visitorKeys;
+
+        // Process overloading.
+        if (typeof textOrConfig === "string") {
+            text = textOrConfig;
+            ast = astIfNoConfig;
+        } else if (typeof textOrConfig === "object" && textOrConfig !== null) {
+            text = textOrConfig.text;
+            ast = textOrConfig.ast;
+            parserServices = textOrConfig.parserServices;
+            scopeManager = textOrConfig.scopeManager;
+            visitorKeys = textOrConfig.visitorKeys;
+        }
+
+        validate(ast);
+        super(ast.tokens, ast.comments);
+
+        /**
+         * The flag to indicate that the source code has Unicode BOM.
+         * @type boolean
+         */
+        this.hasBOM = (text.charCodeAt(0) === 0xFEFF);
+
+        /**
+         * The original text source code.
+         * BOM was stripped from this text.
+         * @type string
+         */
+        this.text = (this.hasBOM ? text.slice(1) : text);
+
+        /**
+         * The parsed AST for the source code.
+         * @type ASTNode
+         */
+        this.ast = ast;
+
+        /**
+         * The parser services of this source code.
+         * @type {Object}
+         */
+        this.parserServices = parserServices || {};
+
+        /**
+         * The scope of this source code.
+         * @type {ScopeManager|null}
+         */
+        this.scopeManager = scopeManager || null;
+
+        /**
+         * The visitor keys to traverse AST.
+         * @type {Object}
+         */
+        this.visitorKeys = visitorKeys || Traverser.DEFAULT_VISITOR_KEYS;
+
+        // Check the source text for the presence of a shebang since it is parsed as a standard line comment.
+        const shebangMatched = this.text.match(astUtils.shebangPattern);
+        const hasShebang = shebangMatched && ast.comments.length && ast.comments[0].value === shebangMatched[1];
+
+        if (hasShebang) {
+            ast.comments[0].type = "Shebang";
+        }
+
+        this.tokensAndComments = sortedMerge(ast.tokens, ast.comments);
+
+        /**
+         * 源代码根据 ECMA-262 规范分成几行。
+         * 这样做是为了避免每个规则都需要单独执行。
+         * @type string[]
+         */
+        this.lines = [];
+        this.lineStartIndices = [0];
+
+        const lineEndingPattern = astUtils.createGlobalLinebreakMatcher();
+        let match;
+
+        /*
+        以前，这是使用正则表达式实现的，
+        该正则表达式匹配一系列非换行符，后跟换行符，然后添加匹配项的长度。 
+        但是，当文件末尾包含大量非换行符时，这会导致灾难性的回溯问题。 
+        为了避免这种情况，当前的实现只匹配换行符并使用 match.index 来获取正确的行开始索引
+        */
+        while ((match = lineEndingPattern.exec(this.text))) {
+            this.lines.push(this.text.slice(this.lineStartIndices[this.lineStartIndices.length - 1], match.index));
+            this.lineStartIndices.push(match.index + match[0].length);
+        }
+        this.lines.push(this.text.slice(this.lineStartIndices[this.lineStartIndices.length - 1]));
+
+        // Cache for comments found using getComments().
+        this._commentCache = new WeakMap();
+
+        // don't allow modification of this object
+        Object.freeze(this);
+        Object.freeze(this.lines);
+    }
+    
+    //其他方法
+}
+```
+
 ### `runRules`
 ```js
 function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parserName, settings, filename, disableFixes, cwd, physicalFilename) {
@@ -637,6 +841,7 @@ function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parser
 
     const lintingProblems = [];
 
+    //迭代配置规则
     Object.keys(configuredRules).forEach(...));
 
     //如果顶级节点是"Program"，则仅运行代码路径分析器，否则跳过
@@ -647,6 +852,97 @@ function runRules(sourceCode, configuredRules, ruleMapper, parserOptions, parser
     return lintingProblems;
 }
 ```
+
+### 迭代配置规则
+```js
+Object.keys(configuredRules).forEach(ruleId => {
+    const severity = ConfigOps.getRuleSeverity(configuredRules[ruleId]);
+
+    // not load disabled rules
+    if (severity === 0) {
+        return;
+    }
+
+    const rule = ruleMapper(ruleId);
+
+    if (rule === null) {
+        lintingProblems.push(createLintingProblem({ ruleId }));
+        return;
+    }
+
+    const messageIds = rule.meta && rule.meta.messages;
+    let reportTranslator = null;
+    const ruleContext = Object.freeze(
+        Object.assign(
+            Object.create(sharedTraversalContext),
+            {
+                id: ruleId,
+                options: getRuleOptions(configuredRules[ruleId]),
+                report(...args) {
+
+                    /*
+                        * Create a report translator lazily.
+                        * In a vast majority of cases, any given rule reports zero errors on a given
+                        * piece of code. Creating a translator lazily avoids the performance cost of
+                        * creating a new translator function for each rule that usually doesn't get
+                        * called.
+                        *
+                        * Using lazy report translators improves end-to-end performance by about 3%
+                        * with Node 8.4.0.
+                        */
+                    if (reportTranslator === null) {
+                        reportTranslator = createReportTranslator({
+                            ruleId,
+                            severity,
+                            sourceCode,
+                            messageIds,
+                            disableFixes
+                        });
+                    }
+                    const problem = reportTranslator(...args);
+
+                    if (problem.fix && rule.meta && !rule.meta.fixable) {
+                        throw new Error("Fixable rules should export a `meta.fixable` property.");
+                    }
+                    lintingProblems.push(problem);
+                }
+            }
+        )
+    );
+
+    const ruleListeners = createRuleListeners(rule, ruleContext);
+
+    // 将规则中的所有选择器添加为侦听器
+    Object.keys(ruleListeners).forEach(selector => {
+        emitter.on(
+            selector,
+            timing.enabled
+                ? timing.time(ruleId, ruleListeners[selector])
+                : ruleListeners[selector]
+        );
+    });
+});
+```
+
+#### `Rule`类型定义
+```js
+/**
+ * @typedef {Object} Rule
+ * @property {Function} create The factory of the rule.
+ * @property {RuleMeta} meta The meta data of the rule.
+ */
+
+ /**
+ * @typedef {Object} RuleMeta
+ * @property {boolean} [deprecated] If `true` then the rule has been deprecated.
+ * @property {RuleMetaDocs} docs The document information of the rule.
+ * @property {"code"|"whitespace"} [fixable] The autofix type.
+ * @property {Record<string,string>} [messages] The messages the rule reports.
+ * @property {string[]} [replacedBy] The IDs of the alternative rules.
+ * @property {Array|Object} schema The option schema of the rule.
+ * @property {"problem"|"suggestion"|"layout"} type The rule type.
+ */
+ ```
 
 # 专题：`@eslint/eslint`
 ## `CascadingConfigArrayFactory`

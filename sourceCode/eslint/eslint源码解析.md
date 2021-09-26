@@ -804,6 +804,7 @@ SourceCodeFixer.applyFixes = function(sourceText, messages, shouldFix) {
         return true;
     }
 
+    //如果problem对象有fix属性，将problem放到fixes数组，否则将其放到remainingMessages数组
     messages.forEach(problem => {
         if (Object.prototype.hasOwnProperty.call(problem, "fix")) {
             fixes.push(problem);

@@ -1,5 +1,5 @@
 /**
- * @fileoverview An object that caches and applies source code fixes.
+ * @fileoverview 缓存和应用源代码修复的对象.
  * @author Nicholas C. Zakas
  */
 "use strict";
@@ -43,7 +43,7 @@ function compareMessagesByLocation(a, b) {
 //------------------------------------------------------------------------------
 
 /**
- * Utility for apply fixes to source code.
+ * 用于将fixes应用到源代码
  * @constructor
  */
 function SourceCodeFixer() {
@@ -51,12 +51,12 @@ function SourceCodeFixer() {
 }
 
 /**
- * Applies the fixes specified by the messages to the given text. Tries to be
- * smart about the fixes and won't apply fixes over the same area in the text.
+ * 将消息指定的修复应用于给定文本
+ * 尝试对修复保持智能，并且不会在文本中的同一区域应用修复。
  * @param {string} sourceText The text to apply the changes to.
  * @param {Message[]} messages The array of messages reported by ESLint.
- * @param {boolean|Function} [shouldFix=true] Determines whether each message should be fixed
- * @returns {Object} An object containing the fixed text and any unfixed messages.
+ * @param {boolean|Function} [shouldFix=true] 确定是否应修复每条消息
+ * @returns {Object} 包含固定文本和任何未固定消息的对象
  */
 SourceCodeFixer.applyFixes = function (sourceText, messages, shouldFix) {
     debug("Applying fixes");
