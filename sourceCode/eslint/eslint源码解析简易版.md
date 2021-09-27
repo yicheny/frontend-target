@@ -253,7 +253,7 @@ module.exports = {
 
 这样问或许有些抽象，下面我们来写一个`Demo`，看看怎么定义一个`Rule`
 
-### `基本格式`
+### 基本格式
 ```js
 module.exports = {
     meta: {
@@ -290,7 +290,29 @@ module.exports = {
         //这里举两个例子，array-element-newline规则就是空格相关的修复，arrow-body-style是和代码相关的修复，感兴趣的可以看一下两者fixable和fix的实现
         //实际上，无论使用哪个字符串运行过程是相同的，不同的是对阅读者的意义
         fixable: "code",
-        schema: [] // no options
+        //用于描述规则的选项，ESLint会使用它验证配置中的选项是否有效
+        schema: [
+            {
+                "enum": ["always", "never"]
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "exceptRange": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false
+            }
+        ],
+        //规则是否已弃用，如果没有弃用可以不用定义
+        deprecated:false,
+        //如果规则不支持的情况下，用于替代的规则
+        replacedBy:['indent'],
+        //规则报告的消息
+        messages:{
+            expected: "Expected indentation of {{expected}} but found {{actual}}."
+        }
     },
     create: function(context) {
         return {
@@ -1220,3 +1242,4 @@ const configFilenames = [
 - [`npm import-fresh`](https://github.com/sindresorhus/import-fresh)
 - [`npm debug`](https://github.com/visionmedia/debug/blob/master/test.js)
 - [阮一峰 命令行通配符教程](http://www.ruanyifeng.com/blog/2018/09/bash-wildcards.html)
+- [JSON Schema](http://json-schema.org/)
