@@ -258,16 +258,37 @@ module.exports = {
 module.exports = {
     meta: {
         //type有三种
-        //"problem"  问题类规则识别导致错误的代码
-        //"suggestion" 建议类规则识别**容易**造成问题的代码
-        //"layout" 识别风格相关代码，比如空格，分号这些
+        //1. "problem"  问题类规则识别导致错误的代码
+        //2. "suggestion" 建议类规则识别**容易**造成问题的代码
+        //3. "layout" 识别风格相关代码，比如空格，分号这些
         type: "suggestion",
         docs: {
             description: "disallow unnecessary semicolons",
+            //category包含以下几种
+            //1. `Possible Errors` 与代码中可能的错误或逻辑错误有关
+            //2. `Best Practices` 最佳实践，帮助避免一些问题
+            //3. `Strict Mode` 与严格模式相关
+            //4. `Variables` 与变量声明相关
+            //5. `Node.js and CommonJS` 关于Node.js 或 在浏览器中使用的CommonJS相关规则
+            //6. `Stylistic Issues` 代码风格
+            //7. `ECMAScript 6` es6【es2015】相关
+            //8. `Deprecated` 已弃用规则
+            //9. `Removed` 被移除，并提供新的规则替代 
             category: "Possible Errors",
+            //在配置文件设置"extends": "eslint:recommended"属性时，是否启用该规则
             recommended: true,
+            //url 指定可以访问完整文档的 url。
             url: "https://eslint.org/docs/rules/no-extra-semi"
         },
+        //如果不设置fixable即使规则实现了fix功能也不会进行修复
+        //源码fixable是这么使用的：
+        //if (problem.fix && rule.meta && !rule.meta.fixable) 抛错
+        //对于fixable的定义：
+        //@property {"code"|"whitespace"} [fixable] The autofix type.
+        //源码中并没有直接使用这两个值
+        //我看了一些官方定义的规则，基本"whitespace"是和空格相关的修复，和"code"相关的是和代码相关的修复
+        //这里举两个例子，array-element-newline规则就是空格相关的修复，arrow-body-style是和代码相关的修复，感兴趣的可以看一下两者fixable和fix的实现
+        //实际上，无论使用哪个字符串运行过程是相同的，不同的是对阅读者的意义
         fixable: "code",
         schema: [] // no options
     },
