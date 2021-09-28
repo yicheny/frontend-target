@@ -291,6 +291,11 @@ module.exports = {
         //实际上，无论使用哪个字符串运行过程是相同的，不同的是对阅读者的意义
         fixable: "code",
         //用于描述规则的选项，ESLint会使用它验证配置中的选项是否有效
+        //遵循JSON schema格式，关于JSON schema它是用于描述及验证JSON数据的规范，
+        //通过JSON schema可以先验证数据是否符合指定的格式，避免无效输入
+        //如果想要详细的了解JSON schema可以去官网http://json-schema.org/
+        //我们启用rule时，第一项决定其错误级别，schema定义的配置项从第二项开始生效
+        //以这里为例，使用的时候可以这么写："rule-name":[ 2, "never", { "exceptRange": false } ]
         schema: [
             {
                 "enum": ["always", "never"]
@@ -347,6 +352,8 @@ module.exports = {
  * @property {"problem"|"suggestion"|"layout"} type The rule type.
  */
 ```
+
+### 路径分析介绍
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
@@ -1235,6 +1242,7 @@ const configFilenames = [
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)
 - [插件指南](https://eslint.bootcss.com/docs/developer-guide/working-with-plugins)
 - [规则指南](https://cn.eslint.org/docs/developer-guide/working-with-rules)
+- [Code Path Analysis Details](https://cn.eslint.org/docs/developer-guide/code-path-analysis)
 - [`wiki-Shebang`](https://zh.wikipedia.org/wiki/Shebang)
 - [`BOM`](https://zh.wikipedia.org/wiki/%E4%BD%8D%E5%85%83%E7%B5%84%E9%A0%86%E5%BA%8F%E8%A8%98%E8%99%9F)
 - [`glob (programming)`](https://en.wikipedia.org/wiki/Glob_(programming))
