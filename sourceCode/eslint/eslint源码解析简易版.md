@@ -280,9 +280,10 @@ module.exports = {
             //url 指定可以访问完整文档的 url。
             url: "https://eslint.org/docs/rules/no-extra-semi"
         },
+
         //如果不设置fixable即使规则实现了fix功能也不会进行修复
         //源码fixable是这么使用的：
-        //if (problem.fix && rule.meta && !rule.meta.fixable) 抛错
+        //if (problem.fix && rule.meta && !rule.meta.fixable) throw new Error(...)
         //对于fixable的定义：
         //@property {"code"|"whitespace"} [fixable] The autofix type.
         //源码中并没有直接使用这两个值
@@ -290,6 +291,7 @@ module.exports = {
         //这里举两个例子，array-element-newline规则就是空格相关的修复，arrow-body-style是和代码相关的修复，感兴趣的可以看一下两者fixable和fix的实现
         //实际上，无论使用哪个字符串运行过程是相同的，不同的是对阅读者的意义
         fixable: "code",
+
         //用于描述规则的选项，ESLint会使用它验证配置中的选项是否有效
         //遵循JSON schema格式，关于JSON schema它是用于描述及验证JSON数据的规范，
         //通过JSON schema可以先验证数据是否符合指定的格式，避免无效输入
@@ -310,6 +312,7 @@ module.exports = {
                 "additionalProperties": false
             }
         ],
+
         //规则是否已弃用，如果没有弃用可以不用定义
         deprecated:false,
         //如果规则不支持的情况下，用于替代的规则
@@ -319,13 +322,138 @@ module.exports = {
             expected: "Expected indentation of {{expected}} but found {{actual}}."
         }
     },
-    create: function(context) {
+
+    //create我放到下面独立章节做讲解
+    //这里只需要知道这里一个返回对象类型的函数即可
+    create: function(context) { 
         return {
             // callback functions
         };
     }
 };
 ```
+
+### `create`
+首先我们看一下源码中涉及`create`的部分：
+```js
+/**
+ * 运行rule，获取它提供的listeners
+ * @param {Rule} rule 具有create方法的标准rule
+ * @param {Context} ruleContext 应该传递给rule的上下文
+ * @throws {any} 执行rule.create所出现的任何错误
+ * @returns {Object} selectors 和 listeners 组成的映射对象
+ */
+function createRuleListeners(rule, ruleContext) {
+    try {
+        return rule.create(ruleContext);
+    } catch (ex) {
+        ex.message = `Error while loading rule '${ruleContext.id}': ${ex.message}`;
+        throw ex;
+    }
+}
+```
+
+### `Context`
+`Context`包含规则上下文相关的信息，有以下属性：
+- `parserOptions` 解析器选项
+- `id`
+- `options` 已配置选项
+- `settings` 共享设置
+- `parserPath` 配置中`parser`的名称
+- `parserServices` 解析器中为规则提供服务的对象
+
+`Context`有以下方法：
+- `getAncestors()` - 返回当前遍历节点的祖先数组，从 AST 的根节点开始，一直到当前节点的直接父节点。这个数组不包括当前遍历的节点本身。
+- `getDeclaredVariables(node)` - 返回由给定节点声明的变量 列表。此信息可用于跟踪对变量的引用。
+- `getFilename()` - 返回与源文件关联的文件名。
+- `getScope()` - 返回当前遍历节点的 `scope`。此信息可用于跟踪对变量的引用
+- `getSourceCode()` - 返回一个`SourceCode`对象，你可以使用该对象处理传递给 `ESLint` 的源代码。
+- `markVariableAsUsed(name)` - 在当前作用域内用给定的名称标记一个变量，如果找到一个具有给定名称的变量并将其标记为已使用，则返回 `true`，否则返回 `false`。
+- `report(descriptor)` - 报告问题的代码
+
+#### `context.getScope()`
+该方法返回的作用域具有以下类型：
+| AST Node Type | Scope Type | 
+| --- | --- | 
+| `Program` | `global` | 
+| `FunctionDeclaration` | `function` | 
+| `FunctionExpression` | `function` | 
+| `ArrowFunctionExpression` | `function` |
+| `ClassDeclaration` | `class` |
+| `ClassExpression` | `class` |
+| `BlockStatement` ※1 | `block` | 
+| `SwitchStatement` ※1 | `switch` | 
+| `ForStatement` ※2 | `for` |
+| `ForInStatement` ※2 | `for` | 
+| `ForOfStatement` ※2 | `for` |	
+| `WithStatement` | `with` | 
+| `CatchClause` | `catch` |
+| others | ※3 |
+
+※1 仅当配置的解析器提供块作用域特性时才使用，`parserOptions.ecmaVersion`必须要大于等于6才能使用块级作用域特性
+
+※2 只有当 `for` 语句将迭代变量定义为块作用域的变量时 (例如，`for (let i = 0;;) {}`)。
+
+※3 具有自己作用域的最近祖先节点的作用域。如果最近的祖先节点有多个作用域，那么它选择最内部的作用域（例如，如果`Program#sourceType` 是 `"module"`，则 `Program` 节点有一个 `global` 作用域和一个 `module` 作用域。最内层的作用域是 `"module"` 作用域。）。
+
+#### `context.report()`
+用来发布警告或错误【由开发者决定】
+
+该方法只接受一个参数，是一个对象，包含以下属性：
+- `message`(可选) 有问题的消息
+- `messageId`(可选) 通过`messageId`可以使用`meta.messages`定义的消息，而不必自己定义`message`
+- `node`(可选) - 与问题有关的 `AST` 节点。如果存在且没有指定 `loc`，那么该节点的开始位置被用来作为问题的位置。
+- `loc`(可选) - 用来指定问题位置的一个对象。如果同时指定的了 `loc` 和 `node`，那么位置将从`loc`获取而非`node`
+    - `start` - 开始位置
+        - `line` - 问题发生的行号，从 `1` 开始。
+        - `column` - 问题发生的列号，从 `0` 开始。
+    - `end` - 结束位置
+        - `line` - 问题发生的行号，从 `1` 开始。
+        - `column` - 问题发生的列号，从 `0` 开始。
+- `data`(可选) - 提供的数据给`message`的占位符使用【下面有示例】
+- `fix`(可选) - 用来解决问题的修复函数
+
+> 请注意，`node` 或 `loc` 至少有一个是必须的；`message`和`messageId`至少有一个是必须的
+
+##### `data`示例
+```js
+context.report({
+    node: node,
+    message: "Unexpected identifier: {{ identifier }}",
+    data: {
+        identifier: node.name
+    }
+});
+```
+
+##### `messageId`示例
+```js
+// in your rule
+module.exports = {
+    meta: {
+        messages: {
+            avoidName: "Avoid using variables named '{{ name }}'"
+        }
+    },
+    create(context) {
+        return {
+            Identifier(node) {
+                if (node.name === "foo") {
+                    context.report({
+                        node,
+                        messageId: "avoidName",
+                        data: {
+                            name: "foo",
+                        }
+                    });
+                }
+            }
+        };
+    }
+};
+```
+
+### 路径分析介绍
 
 ### 源码中的定义
 源码中对`Rule`的定义
@@ -352,8 +480,6 @@ module.exports = {
  * @property {"problem"|"suggestion"|"layout"} type The rule type.
  */
 ```
-
-### 路径分析介绍
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
