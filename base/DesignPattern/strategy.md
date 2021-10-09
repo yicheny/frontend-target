@@ -62,7 +62,7 @@ public class GreenDuck extends Duck{
 
 ![SB](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQkvDGCM_I9VmfxNVhTtj4AGuobEewKUhiTqw&usqp=CAU)
 
-我的想法：”会飞的能叫鸭子吗？那是鹅“
+我的想法：”SB。“
 
 不过作为一个成熟的职场人士，我怎么会将想法直接说出来呢。
 
