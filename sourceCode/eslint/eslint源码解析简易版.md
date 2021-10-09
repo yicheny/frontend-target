@@ -372,6 +372,8 @@ function createRuleListeners(rule, ruleContext) {
 - `report(descriptor)` - 报告问题的代码
 
 #### `context.getScope()`
+这个方法返回一个作用域。【作用域是什么类型，有什么用？】
+
 该方法返回的作用域具有以下类型：
 | AST Node Type | Scope Type | 
 | --- | --- | 
@@ -453,33 +455,63 @@ module.exports = {
 };
 ```
 
-### 路径分析介绍
-
-### 源码中的定义
-源码中对`Rule`的定义
+##### `fix`
+如果想要支持对问题的修复，需要提供`fix`函数：
 ```js
-/**
- * @typedef {Object} Rule
- * @property {Function} create The factory of the rule.
- * @property {RuleMeta} meta The meta data of the rule.
- */
+context.report({
+    node: node,
+    fix: function(fixer){
+        return fixer.insertTextAfter(node,';)
+    }
+})
 ```
 
-这里我们可以知道`Rule`是一个对象，它有两个属性`create`，`meta`.
+###### 参数`fixer`
+`fixer`有以下方法：
+1. `insertTextAfter(nodeOrToken, text)` 在给定的节点或记号之后插入文本
+1. `insertTextAfterRange(range, text)` 在给定的范围之后插入文本
+1. `insertTextBefore(noderOrToken, text)`
+1. `insertTextBeforeRange(range, text)` 
+1. `remove(nodeOrToken)` 删除给定节点或记号
+1. `removeRange(range)` 删除给定范围内的文本
+1. `replaceText(nodeOrText, text)`
+1. `replaceTextRange(range, text)`
 
-`meta`类型的定义：
+这些方法都返回一个`fixing`对象。
+
+###### 返回值
+可以返回以下值：
+1. 一个`fixing`对象
+1. 一个包含`fixing`对象的数组
+1. 一个可迭代的对象，用来枚举`fixing`对象。
+
+如果让`fix`函数返回多个`fixing`对象，那么这些对象不能重叠。
+
+修复的最佳实践：
+1. 避免任何可能改变代码运行时行为和导致其停止工作的修复。
+1. 做尽可能小的修复。那些不必要的修复可能会与其他修复发生冲突，应该避免。
+1. 使每条消息只有一个修复。这是强制的，因为你必须从 fix() 返回修复操作的结果。
+1. 由于所有的规则只第一轮修复之后重新运行，所以规则就没必要去检查一个修复的代码风格是否会导致另一个规则报告错误。
+
+#### `options`
+有些规则可能需要输入可选项，可选项可以通过`.eslintrc`、命令行、注释等方式进行输入，比如：
 ```js
-/**
- * @typedef {Object} RuleMeta
- * @property {boolean} [deprecated] If `true` then the rule has been deprecated.
- * @property {RuleMetaDocs} docs The document information of the rule.
- * @property {"code"|"whitespace"} [fixable] The autofix type.
- * @property {Record<string,string>} [messages] The messages the rule reports.
- * @property {string[]} [replacedBy] The IDs of the alternative rules.
- * @property {Array|Object} schema The option schema of the rule.
- * @property {"problem"|"suggestion"|"layout"} type The rule type.
- */
+{
+    "quotes": ["error", "double"]
+}
 ```
+
+规则使用：
+```js
+module.exports = {
+    create: function(context){
+        const isDouble = (context.options[0] === 'double'); //注意，错误级别不属于`context.options`
+        //...
+    }
+}
+```
+
+#### `getSourceCode()`
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
