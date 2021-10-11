@@ -548,9 +548,9 @@ class ESLint {
     }
 
     /**
-     * Executes the current configuration on an array of file and directory names.
-     * @param {string[]} patterns An array of file and directory names.
-     * @returns {Promise<LintResult[]>} The results of linting the file patterns given.
+     * 在文件和目录名称数组上执行当前配置
+     * @param {string[]} patterns 文件名和目录名的数组。
+     * @returns {Promise<LintResult[]>} linting 文件模式的结果。
      */
     async lintFiles(patterns) {
         if (!isNonEmptyString(patterns) && !isArrayOfNonEmptyString(patterns)) {

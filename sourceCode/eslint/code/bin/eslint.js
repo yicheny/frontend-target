@@ -29,17 +29,15 @@ if (process.argv.includes("--debug")) {
  * - https://github.com/nodejs/node/blob/master/doc/api/process.md#a-note-on-process-io
  * - https://lists.gnu.org/archive/html/bug-gnu-emacs/2016-01/msg00419.html
  * - https://github.com/nodejs/node/issues/7439 (historical)
- *
- * On Windows using `fs.readFileSync(STDIN_FILE_DESCRIPTOR, "utf8")` seems
- * to read 4096 bytes before blocking and never drains to read further data.
- *
- * The investigation on the Emacs thread indicates:
- *
- * > Emacs on MS-Windows uses pipes to communicate with subprocesses; a
- * > pipe on Windows has a 4K buffer. So as soon as Emacs writes more than
- * > 4096 bytes to the pipe, the pipe becomes full, and Emacs then waits for
- * > the subprocess to read its end of the pipe, at which time Emacs will
- * > write the rest of the stuff.
+ * 
+ * 在 Windows 上使用 `fs.readFileSync(STDIN_FILE_DESCRIPTOR, "utf8")` 似乎在阻塞之前读取 4096 字节，
+ * 并且永远不会耗尽以读取更多数据。
+
+ * 对 Emacs 线程的调查表明：
+ * MS-Windows 上的 Emacs 使用管道与子进程通信；
+ * Windows 上的管道具有 4K 缓冲区。 
+ * 因此，一旦 Emacs 向管道写入超过 4096 个字节，管道就会变满，
+ * 然后 Emacs 等待子进程读取管道的末尾，此时 Emacs 将写入其余的内容。
  * @returns {Promise<string>} The read text.
  */
 function readStdin() {

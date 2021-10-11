@@ -574,10 +574,37 @@ module.exports = {
 
 对于`process.exitCode`的值及其作用我们有了解的必要，这样可以让我们理解`cli.execute()`返回值的作用，不然的话可能有的人会疑惑`cli.execute()`这些数字值的意义。
 
+`node`中退出线程有两种方式`process.exitCode`、`process.exit(exitCode)`，相同点就是`exitCode`为`0`时表示正常退出，大于等于`1`时表示异常退出，这里返回值时`1`，`2`时都属于异常退出，对于程序来说没什么区别，对于开发者来说，如果是`1`则表示警告或者不严重的错误，而`2`则表示致命错误，开发者可以通过退出码快速判定异常级别或者说严重程度。
 
+那么这两种方式有什么区别呢？
+
+`process.exitCode`的退出相对安全，它会等待进程执行结束自然退出，而`process.exit(exitCode)`退出则是强制中断
+
+这里举两个例子，先是`process.exitCode`
+```js
+console.log(1);
+process.exitCode = 2;
+console.log(2)
+```
+
+执行结果会是这样的：
+![process.exitCode](https://pic.imgdb.cn/item/616395312ab3f51d91d4421b.jpg)
+
+然后是`process.exit()`
+```js
+console.log(1);
+process.exit(2)
+console.log(2)
+```
+
+执行结果如下：
+![process.exit](https://pic.imgdb.cn/item/616395862ab3f51d91d4ace8.jpg)
+
+一般来说，如果有正在执行的异步任务【比如I/O读取或者接口通信之类的】，使用`process.exit()`可能会导致问题，在这里`eslint`存在大量的`I/O`操作，所以它选择了`process.exitCode`进行退出。
+
+有些情况下使用`process.exit()`也是合理的选择，了解两者的用法和区别，可以根据情况选中其中适合的一种。
 
 # `lib/cli.js`
-
 ```js
 const cli = {
     async execute(args, text) {
@@ -598,7 +625,7 @@ const cli = {
 
 流程示意图：
 
-![cli.execute](https://pic.imgdb.cn/item/61454f092ab3f51d91fca2dc.jpg)
+![cli.execute](https://pic.imgdb.cn/item/6163aa712ab3f51d91ec28cf.jpg)
 
 这里特别说明一下，源码里`cli`对象真的只有`execute`一个方法。
 
@@ -647,6 +674,7 @@ if(await printResults(engine, resultsToPrint, options.format, options.outputFile
     //检查错误、致命错误、警告
 }
 ```
+
 先说下`printResults`的实现：
 ```js
 /**
@@ -730,7 +758,7 @@ if (await printResults(engine, resultsToPrint, options.format, options.outputFil
     if (!errorCount && tooManyWarnings) {
         log.error(
             "ESLint found too many warnings (maximum: %s).",
-            options.maxWarnings
+            options.maxWarnings 
         );
     }
 
@@ -741,14 +769,26 @@ if (await printResults(engine, resultsToPrint, options.format, options.outputFil
     return (errorCount || tooManyWarnings) ? 1 : 0;
 }
 ```
+这里逻辑也很简单，就是：
+1. 如果有致命错误，返回2
+1. 如果警告或一般错误，返回1（如果只有警告会特别进行一个关于警告的打印——如果设置了`--max-warining`）
+1. 没有警告、错误、致命错误，返回0
+
+在`printResults`之后是`return 2`，这里返回`2`是因为之前的`printResults`失败，这是严重的失败，所以返回`2`
+
+到这里，我觉得对于`cli.execute()`的执行流程我们应该是清晰了，我们再回顾下流程图：
+
+![cli.execute](https://pic.imgdb.cn/item/6163aa712ab3f51d91ec28cf.jpg)
+
+现在我们进入`lint`核心处理部分，看这里做了什么。
 
 ## `lint`核心处理
 ```js
 const engine = new ESLint(translateOptions(options));//初始化ESLint
 let results;
 
-if (useStdin) {//使用--stdin会走这里，先不关注
-    ...
+if (useStdin) {//使用--stdin会走这里
+    result = await engine.lintText(text, {...})
 } else {
     results = await engine.lintFiles(files);
 }
@@ -758,13 +798,172 @@ if (options.fix) {
 }
 ```
 
+流程示意图：
 
 ![lint核心处理](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
 
-这部分代码里有三个点我认为较为重要，我们接下来解读这三个点：
-1. 初始化`Eslint`
-2. 调用`engine.lintText`
-3. 调用`engine.lintFiles`
+可以看到这里初始化了一个`Eslint`实例，它接收的参数是`translateOptions(options)`，我们知道`options`是命令行参数解析得到的参数对象，那么这里的`translateOptions()`函数是做什么的？
+
+这里它对`options`做了转换，为什么需要转换？因为`options`和`Eslint`初始化需要的数据是有所差异的，所以这里是将`options`的转换为`CLIEngine`所需要的初始化参数。
+
+这里额外提一句，这里源码注释是`Translates the CLI options into the options expected by the CLIEngine.`（将 `CLI` 选项转换为 `CLIEngine` 预期的选项。）。
+
+这句话其实并不是很合理，因为这个`options`传递给`Eslint`里面的时候，它是经过再处理然后传递给`CLIEngine`的。而`options`在`Eslint`里面不只是传递`CLIEngine`，它本身也需要使用`options`，比如说`options.plugins`，`options.overrideConfig`这些。
+
+的确，这里一部分处理是为了`CLIEngine`，但并不是全部，有两点可以证明：
+1. 传递给`CLIEngine`的时候需要再次处理
+1. `Eslint`初始化本身也需要用到`Options`的部分数据
+
+所以我的想法是认为`translateOptions`的处理既是为了`CLIEngine`，也是为了`Eslint`，它并不只是为了`CLIEngine`的预期数据，这种想法是比较合理的。
+
+回到`translateOptions`的实现，对`options`具体转换内容不说（因为属性太多了），我这里用伪代码表示下大概的属性分类，大概就这么三种，
+```js
+function translateOptions({cache,inlineConfig,reportUnusedDisableDirectives}){
+    return {
+        //属性完全相同的
+        cache, 
+        //属性名不同的
+        extensions: ext,
+        //基于一个或多个options属性衍生出需要的值
+        reportUnusedDisableDirectives: reportUnusedDisableDirectives ? "error" : void 0,
+        cacheLocation: cacheLocation || cacheFile,
+        fix: (fix || fixDryRun) && (quiet ? quietFixPredicate : true),
+}
+```
+
+总之，现在我们先得到了一个`Eslint`的实例`engine`
+
+然后接着往下走，接下来是`linter`的关键，这里有个小分支，如果使用`--stdin`则调用`lintText`，否则调用`lintFiles`
+
+这里如果我们使用`--stdin`则读取得到的是源码本身，可以直接`lint`，所以是`lintText`；而如果常规模式，我们会传递一个文件根目录，根据这个目录递归读取文件得到代码，然后进行`lint`，所以是`lintFiles`
+
+我们这里优先关注`lintFiles`的实现。
+
+最后是`options.fix`这里，其实这个并不属于`lint`的重点，这里只是决定是否将修复结果写入到文件。
+
+现在我们再回顾下流程图：
+
+![lint核心处理](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
+
+这次有3个重要的部分，这里`lintText`我放到最后，需要考虑的是先了解`Eslint`的初始化过程，还是先了解`LintFiles`？
+
+从实际执行流程的考虑，应该先了解`Eslint`，然后在了解`LintFiles`，麻烦的地方在于`Eslint`的初始化做了很多事，而且不仅仅是为了`lintFiles`和`lintText`准备数据，它的方法是很多的。
+
+如果先了解`Eslint`，需要花费很长时间，会牵涉到很多非`lint`核心部分的代码，而如果先看`lintFiles`我们可以关注最核心的部分，这样子需要了解的内容会少很多。
+
+综上，先看`lintFiles`的执行过程。
+
+我们先看一下`lintFiles(files)`接受的参数`files`
+
+## `engine.lintFiles(files)`
+```js
+async lintFiles(patterns) {
+    //patterns必须是非空字符串 或 非空字符字符串数组
+    if (!isNonEmptyString(patterns) && !isArrayOfNonEmptyString(patterns)) {
+        throw new Error("'patterns' must be a non-empty string or an array of non-empty strings");
+    }
+
+    const { cliEngine } = privateMembersMap.get(this);
+
+    return processCLIEngineLintReport(
+        cliEngine,
+        cliEngine.executeOnFiles(patterns)
+    );
+}
+```
+这里首先是对参数`patterns`的校验，它必须是非空字符串 或 非空字符字符串数组，否则直接抛错退出。
+
+然后是取出`cliEngine`，这里`privateMembersMap`是`WeakMap`类型，它是一个全局变量，键名是`Eslint`实例，键值是一个对象，这个对象有两个属性`cliEngine`、`options`。
+
+```js
+/**
+ * @type {WeakMap<ESLint, ESLintPrivateMembers>}
+ */
+const privateMembersMap = new WeakMap();
+
+/**
+ * Private members for the `ESLint` instance.
+ * @typedef {Object} ESLintPrivateMembers
+ * @property {CLIEngine} cliEngine The wrapped CLIEngine instance.
+ * @property {ESLintOptions} options The options used to instantiate the ESLint instance.
+ */
+```
+
+这里稍微说一下，为什么使用`WeakMap`类型，主要原因是因为它的键名是弱引用，弱引用和强引用定义：
+```
+在计算机程序设计中，弱引用与强引用相对，是指不能确保其引用的对象不会被垃圾回收器回收的引用。一个对象若只被弱引用所引用，则被认为是不可访问（或弱可访问）的，并因此可能在任何时刻被回收。
+```
+
+无论是`Object`还是`Map`都是强引用，举个例子：
+```js
+const map = new Map();
+const key = new Array();
+
+map.set(key,1)
+//注意，这里将key设置为null，原来的引用对象不会被回收
+key = null;
+```
+
+如果想要回收原引用对象，需要这么写：
+```js
+let map = new Map();
+let key = new Array();
+map.set(key, 1);
+map.delete(key); //注意这里！
+key = null;
+```
+
+如果使用`WeakMap`
+```js
+const map = new WeakMap();
+const key = new Array();
+
+map.set(key,1)
+key = null; //原来的对象会被回收
+```
+
+就是这样，另外这里可以发现`privateMembersMap`使用的`Eslint`实例作为键名，这其实也是它的一个重要特点：
+1. `Object`只能使用简单类型作为键名，比如`Strting`，`Number`，`Symbol`，且可枚举
+1. `Map`的键名可以是任意类型，且可枚举
+1. `WeakMap`的键名必须是对象，不可枚举
+
+现在我们取出`engine`，然后执行
+```js
+return processCLIEngineLintReport(
+    cliEngine,
+    cliEngine.executeOnFiles(patterns)
+);
+```
+
+我们看一下`processCLIEngineLintReport`的实现：
+```js
+/**
+ * CLIEngineLintReport的results提取出来返回【以适配Eslint的API】
+ * @param {CLIEngine} cliEngine The CLIEngine instance.
+ * @param {CLIEngineLintReport} report The CLIEngine linting report to process.
+ * @returns {LintResult[]} The processed linting results.
+ */
+function processCLIEngineLintReport(cliEngine, { results }) {
+    const descriptor = {
+        configurable: true,
+        enumerable: true,
+        get() {
+            return getOrFindUsedDeprecatedRules(cliEngine, this.filePath);
+        }
+    };
+
+    for (const result of results) {
+        Object.defineProperty(result, "usedDeprecatedRules", descriptor);
+    }
+
+    return results;
+}
+```
+这里主要是从参数`report`取出`results`返回，因为我们想要的结果是`LintResult[]`类型。
+
+可以看到，这里为每条`result`添加了一个`usedDeprecatedRules`属性，用于获取已被使用的废弃规则。
+
+然后我们回到`cliEngine.executeOnFiles(patterns)`这里，它非常的关键，它的执行结果会作为参数传递给`processCLIEngineLintReport`，我们进入查看代码。
 
 # `eslint/eslint.js`
 这里先给出`constructor`部分的代码：
@@ -828,15 +1027,6 @@ constructor(providedOptions) {
 现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
 
 ![lint核心处理2](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
-
-## `engine.lintFiles(files)`
-```js
-async lintFiles(patterns) {
-    //...
-    return processCLIEngineLintReport(cliEngine, cliEngine.executeOnFiles(patterns));
-}
-```
-关键在`cliEngine.executeOnFiles`
 
 ## `cliEngine.executeOnFiles`
 ```js
