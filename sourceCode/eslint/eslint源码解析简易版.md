@@ -12,6 +12,11 @@
 
 预期是阅读此文档后至少对`eslint`的流程有个大致思路。
 
+## 一些约定
+为方便书写和理解，添加一些约定
+
+1. 如果我在注释里以`//*`开头则表明这部分很重要，在下面有**深入描述**
+
 # 阅读能力要求
 1. `javascript`基本语法
 1. 掌握`eslint`使用【主要是配置这一块】
@@ -490,7 +495,7 @@ context.report({
 修复的最佳实践：
 1. 避免任何可能改变代码运行时行为和导致其停止工作的修复。
 1. 做尽可能小的修复。那些不必要的修复可能会与其他修复发生冲突，应该避免。
-1. 使每条消息只有一个修复。这是强制的，因为你必须从 fix() 返回修复操作的结果。
+1. 使每条消息只有一个修复。这是强制的，因为你必须从 `fix()` 返回修复操作的结果。
 1. 由于所有的规则只第一轮修复之后重新运行，所以规则就没必要去检查一个修复的代码风格是否会导致另一个规则报告错误。
 
 #### `options`
@@ -519,10 +524,15 @@ module.exports = {
 # 问题
 在开始之前我会提几个问题，阅读源码的时候带着这些问题去思考，最终问题解答我放到了“解答”这个部分，可以直接在这部分看解答。
 
-1. `eslint`是怎么将`eslintrc.*`作为默认配置的？
-1. `extends`是怎么生效的？
-1. `overrides`是怎么生效的？
-1. 关于`eslint.*`之外的另一种配置方案是怎么回事？
+`eslintrc`相关
+1. [x] `eslint`是怎么将`eslintrc.*`作为默认配置的？
+1. [ ] `extends`是怎么生效的？
+1. [ ] `overrides`是怎么生效的？
+1. [x] 关于`eslint.*`之外的另一种配置方案是怎么回事？
+
+`rule`相关
+1. [ ] `eslint`是怎么执行`rule`的
+2. [ ] 代码修复的细节
 
 # 入口
 ```json5
@@ -534,7 +544,7 @@ module.exports = {
 }
 ```
 
-入口是`bin/eslint.js`文件
+入口是`bin/eslint.js`文件，每次我们执行命令`eslint [options] file.js [file.js] [dir]`就是从这里开始执行的。
 
 ![package.json#bin](https://pic.imgdb.cn/item/613719e144eaada7398a9c46.jpg)
 
@@ -549,29 +559,188 @@ module.exports = {
     process.exitCode = await require("../lib/cli").execute(...);
 }()).catch(onFatalError);
 ```
-
-可以发现，核心内容在`../lib/cli`文件里：
-
 ![bin/eslint#main](https://pic.imgdb.cn/item/61371a3344eaada7398b36a6.jpg)
 
+这里如果我们执行`eslint --init`会走`initializeConfig`这边的代码，这个命令可以初始创建`eslintrc.*`文件，现在我并不想探寻`--init`的具体实现细节。
+
+`require("../lib/cli").execute(...)`这里包含着`lint`处理，我们这次主要目的是了解：
+1. 了解`options`的处理流程
+2. 了解`rule`是怎么被执行的
+3. 了解`eslint`的修复原理
+
+所以我们接下来会进入`lib/cli.js`文件中查看代码。
+
+不过在此之前，我要说一下`process.exitCode`，在接下来的`cli.execute()`会返回几种值：`0`、`1`、`2`，返回值会被赋值给`process.exitCode`。
+
+对于`process.exitCode`的值及其作用我们有了解的必要，这样可以让我们理解`cli.execute()`返回值的作用，不然的话可能有的人会疑惑`cli.execute()`这些数字值的意义。
+
+
+
 # `lib/cli.js`
+
 ```js
-async execute(args, text) {
-    //将args解析成对象形式并赋值给变量options
+const cli = {
+    async execute(args, text) {
+        //将args解析成对象形式并赋值给变量options
 
-    //检查一些命令行参数并退出
+        //检查一些命令行参数并退出，比如help，version等
 
-    //!lint核心处理
+        //* lint核心处理
 
-    //quite,printResult并退出
+        //是否启用quite模式，启用则过滤警告
+        
+        //printResult并退出
 
-    return 2;
+        return 2;
+    }   
 }
 ```
 
 流程示意图：
 
 ![cli.execute](https://pic.imgdb.cn/item/61454f092ab3f51d91fca2dc.jpg)
+
+这里特别说明一下，源码里`cli`对象真的只有`execute`一个方法。
+
+下面我说明下`cli.execute`在这里什么，为什么要这么做？
+
+首先，我们知道在执行命令行指令时，我们输入的是字符串，比如说执行类似`order -s=true -b=1`这种指令，通过`process.argv`取到的默认是字符串，很明显这样的原始信息是很不方便的，比如在这里我们可以希望直接得到的参数是这样的：
+```js
+{
+    s:true,
+    b:1
+}
+```
+这样用起来肯定方便许多。
+
+然后还有一些情况，比如说我们希望`-h`和`--help`标识同一个属性，又比如我们希望`-s`只能输入布尔类型，如果输入其他类型在使用之前就可以校验并报错。
+
+如果我们自己处理，当然也可以做到，不过相对麻烦一些，而且一些特殊场景可能也没考虑到，我自己写过一些命令行工具，我的经验是如果命令就那么几个，只在内部项目使用，自己处理也行，比较方便。如果对命令行工具要求较高，并且处理场景相对复杂，那么最好使用一些参数解析库。
+
+`eslint`这里使用了`optionator`这个库进行解析，这个库我也用过，一些细节处理先不用关注，它最核心的功能还是将字符串参数解析成对象形式的数据以便在接下来使用。
+
+所以这里，`cli.execute`做的第一件事，是将`argv`的原始参数解析成对象形式数据，便于接下来使用。
+
+然后接下来，解析完之后，拿到`options`的参数就可以校验并执行相关功能了，类似这样：
+```js
+if (options.help) {
+    log.info(CLIOptions.generateHelp());
+    return 0;
+}
+```
+
+有很多命令是和核心`linter`无关的，比如说`eslint --help`这个是输入帮助列表，`eslint --version`是打印当前`eslint`版本，它们都是执行一些功能之后**直接退出**。
+
+所以一开始优先处理这部分命令，会在执行`linter`之前直接退出。
+
+这部分不是说不重要，只是说这里不是我们想要了解的`linter`重心，所以我们还是得往下面得部分走。
+
+然后来到了`linter`这部分，这部分我们可以认为是对`linter`的核心处理，我们在这里解析`eslintrc.*`的配置项，并且执行`rule`。
+
+这部分我会在下一节做详细说明，这里知道它的作用就可以。
+
+接着走到下面，如果有`--quite`，启用`quite`模式会过滤掉警告。
+
+然后接下来到`printResult`这部分，代码类似这样：
+```js
+if(await printResults(engine, resultsToPrint, options.format, options.outputFile)){
+    //检查错误、致命错误、警告
+}
+```
+先说下`printResults`的实现：
+```js
+/**
+ * Outputs the results of the linting.
+ * @param {ESLint} engine The ESLint instance to use.
+ * @param {LintResult[]} results The results to print.
+ * @param {string} format The name of the formatter to use or the path to the formatter.
+ * @param {string} outputFile The path for the output file.
+ * @returns {Promise<boolean>} True if the printing succeeds, false if not.
+ * @private
+ */
+async function printResults(engine, results, format, outputFile) {
+    let formatter;
+
+    try {
+        formatter = await engine.loadFormatter(format);
+    } catch (e) {
+        log.error(e.message);
+        return false;
+    }
+
+    const output = formatter.format(results);
+
+    if (output) {
+        if (outputFile) {
+            const filePath = path.resolve(process.cwd(), outputFile);
+
+            if (await isDirectory(filePath)) {
+                log.error("Cannot write to output file path, it is a directory: %s", outputFile);
+                return false;
+            }
+
+            try {
+                await mkdir(path.dirname(filePath), { recursive: true });
+                await writeFile(filePath, output);
+            } catch (ex) {
+                log.error("There was a problem writing the output file:\n%s", ex);
+                return false;
+            }
+        } else {
+            log.info(output);
+        }
+    }
+
+    return true;
+}
+```
+代码应该不难理解，这里我还是说明，梳理下逻辑，如果认为自己完全理解源码的可以跳过。
+
+`printResult`的作用就是打印结果
+
+`printResult`的返回值是布尔类型，如果打印成功返回`true`，打印失败返回`false`
+
+关于参数：
+- `engine` `Eslint`实例，关于`Eslint`会在下面的部分说明
+- `results` 需要打印的结果
+- `format` 格式化程序
+- `outputFile` 输出路径
+
+运行逻辑：
+1. 通过`engine.loadFormatter(format)`取出格式化程序
+2. 然后利用格式化程序将结果格式化。
+3. 如果没有输出路径，则直接打印结果
+4. 如果有输出路径
+   1. 我们先判断这个路径是不是目录，如果是则报错退出，
+   2. 如果不是，我们尝试为其创建一个目录，然后写入到文件路径中
+
+如果成功打印结果会执行对错误和警告的检查
+
+如果打印失败，我们可以直接认为执行失败。但是呢，即使打印成功，`linter`之后可能依旧存在错误和警告，这个时候需要针对`linter`的结果进行校验。
+
+```js
+if (await printResults(engine, resultsToPrint, options.format, options.outputFile)) {
+    const { errorCount, fatalErrorCount, warningCount } = countErrors(results);
+
+    const tooManyWarnings =
+        options.maxWarnings >= 0 && warningCount > options.maxWarnings;
+    const shouldExitForFatalErrors =
+        options.exitOnFatalError && fatalErrorCount > 0;
+
+    if (!errorCount && tooManyWarnings) {
+        log.error(
+            "ESLint found too many warnings (maximum: %s).",
+            options.maxWarnings
+        );
+    }
+
+    if (shouldExitForFatalErrors) {
+        return 2;
+    }
+
+    return (errorCount || tooManyWarnings) ? 1 : 0;
+}
+```
 
 ## `lint`核心处理
 ```js
@@ -588,6 +757,7 @@ if (options.fix) {
     await ESLint.outputFixes(results); //将修复后的结果写入文件
 }
 ```
+
 
 ![lint核心处理](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
 
@@ -663,7 +833,7 @@ constructor(providedOptions) {
 ```js
 async lintFiles(patterns) {
     //...
-    return processCLIEngineLintReport(cliEngine,cliEngine.executeOnFiles(patterns));
+    return processCLIEngineLintReport(cliEngine, cliEngine.executeOnFiles(patterns));
 }
 ```
 关键在`cliEngine.executeOnFiles`
@@ -1288,7 +1458,7 @@ Hello world!
 涉及引用库：
 1. `optionator` 是`js`选项解析和帮助生成库 
 1. `@eslint/eslintrc` 此存储库包含 `ESLint` 的旧 `ESLintRC` 配置文件格式
-1. `import-fresh` 当需要全新导入模块时，可用于测试目的
+2. `import-fresh` 每次导入模块都是全新的（使用`require`读取相同模块时其数据时共享的）
 
 核心流程相关：
 1. 命令入口文件是`bin/eslint.js`
@@ -1397,6 +1567,7 @@ const configFilenames = [
 平铺配置方案
 
 # 资料
+- [eslint源码](https://github.com/eslint/eslint)
 - [配置指南](https://eslint.bootcss.com/docs/user-guide/configuring)
 - [插件指南](https://eslint.bootcss.com/docs/developer-guide/working-with-plugins)
 - [规则指南](https://cn.eslint.org/docs/developer-guide/working-with-rules)

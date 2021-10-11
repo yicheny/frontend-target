@@ -163,7 +163,7 @@ async function isDirectory(filePath) {
  * Outputs the results of the linting.
  * @param {ESLint} engine The ESLint instance to use.
  * @param {LintResult[]} results The results to print.
- * @param {string} format The name of the formatter to use or the path to the formatter.
+ * @param {string} format 要使用的 格式化程序的名称 或 格式化程序的路径。
  * @param {string} outputFile The path for the output file.
  * @returns {Promise<boolean>} True if the printing succeeds, false if not.
  * @private
