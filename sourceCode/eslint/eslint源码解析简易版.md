@@ -660,7 +660,7 @@ if (options.help) {
 
 所以一开始优先处理这部分命令，会在执行`linter`之前直接退出。
 
-这部分不是说不重要，只是说这里不是我们想要了解的`linter`重心，所以我们还是得往下面得部分走。
+这部分不是说不重要，只是说这里不是我们想要了解的`linter`重心，所以我们还是得往下面的部分走。
 
 然后来到了`linter`这部分，这部分我们可以认为是对`linter`的核心处理，我们在这里解析`eslintrc.*`的配置项，并且执行`rule`。
 
@@ -722,7 +722,7 @@ async function printResults(engine, results, format, outputFile) {
     return true;
 }
 ```
-代码应该不难理解，这里我还是说明，梳理下逻辑，如果认为自己完全理解源码的可以跳过。
+代码应该不难理解，不过还是进行说明，梳理下逻辑，如果认为自己完全理解源码可以跳过。
 
 `printResult`的作用就是打印结果
 
@@ -853,7 +853,40 @@ function translateOptions({cache,inlineConfig,reportUnusedDisableDirectives}){
 
 综上，先看`lintFiles`的执行过程。
 
-我们先看一下`lintFiles(files)`接受的参数`files`
+我们先看一下`lintFiles(files)`接受的参数`files`，它是这么声明的`const files = options._`
+
+那么这个`options._`是什么，描述的话这里存放的是散落的输入值，我举个例子，使用`optionator`解析，如果输入命令
+```
+order --debug a b c d
+```
+
+解析得到的`options`是这样的：
+```js
+{
+    debug: true,
+    _: [ 'a', 'b', 'c', 'd']
+}
+```
+
+我们回想下`eslint`的命令：`eslint [options] file.js [file.js] [dir]`
+
+这里`options`是通过`--xxx`，`-x`进行参数传递的，而其他输入的值都会视为`files`的值存放到`_`，举个例子，如果输入：
+```
+eslint --fix --debug src test/t.js
+```
+
+那么我们得到的结果是这样的：
+```js
+{
+    fix:true,
+    debug: true,
+    _: [ 'src', 'test/t.js']
+}
+```
+
+就是这样，到这里我们对`eslint`的命令行输入机制应该也有了一个基本了解。
+
+现在我们知道`files`是什么了，接下来真正了解`lintFiles(files)`的内部实现。
 
 ## `engine.lintFiles(files)`
 ```js
@@ -875,24 +908,27 @@ async lintFiles(patterns) {
 
 然后是取出`cliEngine`，这里`privateMembersMap`是`WeakMap`类型，它是一个全局变量，键名是`Eslint`实例，键值是一个对象，这个对象有两个属性`cliEngine`、`options`。
 
+我们看一下`privateMembersMap`的基本类型定义：
 ```js
 /**
+ * privateMembersMap的键名，键值约定
  * @type {WeakMap<ESLint, ESLintPrivateMembers>}
  */
 const privateMembersMap = new WeakMap();
 
 /**
- * Private members for the `ESLint` instance.
+ * 对键值ESLintPrivateMembers的类型定义
  * @typedef {Object} ESLintPrivateMembers
  * @property {CLIEngine} cliEngine The wrapped CLIEngine instance.
  * @property {ESLintOptions} options The options used to instantiate the ESLint instance.
  */
 ```
 
-这里稍微说一下，为什么使用`WeakMap`类型，主要原因是因为它的键名是弱引用，弱引用和强引用定义：
-```
-在计算机程序设计中，弱引用与强引用相对，是指不能确保其引用的对象不会被垃圾回收器回收的引用。一个对象若只被弱引用所引用，则被认为是不可访问（或弱可访问）的，并因此可能在任何时刻被回收。
-```
+这里可以思考一个问题：为什么放到一个`WeakMap`变量里，而不是直接挂到`this`的属性上？
+
+这里是解答：为什么使用`WeakMap`类型，主要原因是因为它的键名是弱引用，弱引用和强引用定义：
+
+> 在计算机程序设计中，弱引用与强引用相对，是指不能确保其引用的对象不会被垃圾回收器回收的引用。一个对象若只被弱引用所引用，则被认为是不可访问（或弱可访问）的，并因此可能在任何时刻被回收。
 
 无论是`Object`还是`Map`都是强引用，举个例子：
 ```js
@@ -965,83 +1001,25 @@ function processCLIEngineLintReport(cliEngine, { results }) {
 
 然后我们回到`cliEngine.executeOnFiles(patterns)`这里，它非常的关键，它的执行结果会作为参数传递给`processCLIEngineLintReport`，我们进入查看代码。
 
-# `eslint/eslint.js`
-这里先给出`constructor`部分的代码：
+## `cliEngine.executeOnFiles(patterns)`
 ```js
-class ESLint {
-    constructor(options = {}) {
-        //验证和规范化包装的 CLIEngine 实例的选项。
-        const processedOptions = processOptions(options);
-
-        //初始化cliEngine
-         const cliEngine = new CLIEngine(processedOptions);
-
-        // 添加到插件池
-        if (options.plugins) {...}
-
-        // 覆盖配置
-        if (hasDefinedProperty(options.overrideConfig)) {...}
-
-        // 更新缓存
-        if (updated) {...}
-
-        // 初始化私有属性
-        privateMembersMap.set(this, {...});
-    }
-}
-```
-
-![ESLint#constructor](https://pic.imgdb.cn/item/613984e944eaada73961c9b1.jpg)
-
-接下来进入`CLIEngine`的`constructor`，看看它在初始化的时候做了什么。
-
-# `cli-engine/cli-engine.js`
-```js
-constructor(providedOptions) {
-    // 整合options
-    const options = Object.assign(...)
-
-    // 创建一系列数据
-    const additionalPluginPool = new Map();
-    const cacheFilePath = getCacheFile(...);
-    const configArrayFactory = new CascadingConfigArrayFactory({...});
-    const fileEnumerator = new FileEnumerator({...});
-    const lintResultCache = ...;
-    const linter = new Linter({ cwd: options.cwd });
-    const lastConfigArrays = [configArrayFactory.getConfigArrayForFile()];
-
-    // 存储私有数据
-    internalSlotsMap.set(this, {...});
-
-    // 为fixes设置特殊过滤器
-    if (options.fix && options.fixTypes && options.fixTypes.length > 0) {...}
-}
-```
-
-![CliEngine#constructor](https://pic.imgdb.cn/item/6139851144eaada7396218f9.jpg)
-
-这里创建的私有数据先不深入，在接下来的使用到这些数据的时候，我们再进行解读。
-
-不过这里我要说一下：`CascadingConfigArrayFactory`这个类非常重要，我在下面用了一个专题特别进行说明，这个类的主要目的就是用于处理级联配置，如果对这一块不了解或者感兴趣的，可以看一下这个专题。
-
-现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
-
-![lint核心处理2](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
-
-## `cliEngine.executeOnFiles`
-```js
+/**
+ * Executes the current configuration on an array of file and directory names.
+ * @param {string[]} patterns An array of file and directory names.
+ * @throws {Error} As may be thrown by `fs.unlinkSync`.
+ * @returns {LintReport} The results for all files that were linted.
+ */
 executeOnFiles(patterns) {
-    //取出数据
+    // 取出数据
     const {...} = internalSlotsMap.get(this);
 
     // 清除上次使用的配置数组
     lastConfigArrays.length = 0;
 
-    //删除缓存文件
+    // 删除缓存文件
     if (!cache) {...}
 
-    // 迭代源代码文件
-    // ...这段代码比较重要，代码量也较大，为方便阅读和理解，我放到了单独的子章节内
+    //* 迭代源代码文件
 
     // 将缓存持久化到磁盘
     if (lintResultCache) lintResultCache.reconcile();
@@ -1054,7 +1032,113 @@ executeOnFiles(patterns) {
 
 ![cliEngine.executeOnFiles](https://pic.imgdb.cn/item/6139d62844eaada7390532f2.jpg)
 
-有两个地方我比较关心，一个是迭代源代码文件进行的处理，一个是返回结果，首先从迭代源代码文件部分开始看吧
+流程的一开始是从`internalSlotsMap`里取出会使用到的数据，和`privateMembersMap`类似，`internalSlotsMap`也是一个`WeakMap`类型。
+
+然后再进行其他操作之前，先清除上次使用的配置数组，这么做的原因是什么？
+
+`lastConfigArrays`在迭代文件时会进行`push(config)`，然后在其他地方被使用，所以我们需要持有这个`lastConfigArrays`的引用。然后从它的名字也能出来，我们只保留最后一次配置数组，因为使用的时候只需要最新一次的配置数据，所以在放置新的`config`之前，需要将上一次的`config`全部清除掉。
+
+在清除`lastConfigArrays`之后，我们删除缓存文件，理由和`lastConfigArrays`类似，我们看一下这里是怎么删除缓存的：
+```js
+if (!cache) {
+    try {
+        fs.unlinkSync(cacheFilePath);
+    } catch (error) {
+        const errorCode = error && error.code;
+
+        // 当这类文件不存在 
+        // 或 （文件系统为只读 且 缓存文件不存在时） 忽略错误
+        if (errorCode !== "ENOENT" && !(errorCode === "EROFS" && !fs.existsSync(cacheFilePath))) {
+            throw error;
+        }
+    }
+}
+```
+就是使用`unlinkSync`直接删除，一般来说删除失败会抛错。
+
+不过这里做了一个判断，如果文件不存在或文件为只读时则忽略，不做抛错。
+
+删除缓存的下一步是迭代文件，并进行校验，这一步很重要，我放到下面章节重点说明。
+
+迭代文件之后是将缓存持久化的硬盘上，迭代文件时会产生缓存，这里将缓存持久化到硬盘上（为什么要这么做？我估计是为了节省内存空间，需要进一步验证）
+
+最后我们看一下返回值：
+```js
+return {
+    results,
+    ...calculateStatsPerRun(results), //计算每次运行的统计数据
+
+    // 惰性初始化，因为 CLI 和 `ESLint` API 不使用它。
+    get usedDeprecatedRules() {
+        if (!usedDeprecatedRules) {
+            usedDeprecatedRules = Array.from(
+                iterateRuleDeprecationWarnings(lastConfigArrays)
+            );
+        }
+        return usedDeprecatedRules;
+    }
+};
+```
+
+`results`就是校验之后的结果，这个不用说。
+
+我们看一下`calculateStatsPerRun(results)`，这个是用来进行数据统计的，我们看一下实现：
+```js
+/**
+ * It will calculate the error and warning count for collection of results from all files
+ * @param {LintResult[]} results Collection of messages from all the files
+ * @returns {Object} Contains the stats
+ * @private
+ */
+function calculateStatsPerRun(results) {
+    return results.reduce((stat, result) => {
+        stat.errorCount += result.errorCount;
+        stat.fatalErrorCount += result.fatalErrorCount;
+        stat.warningCount += result.warningCount;
+        stat.fixableErrorCount += result.fixableErrorCount;
+        stat.fixableWarningCount += result.fixableWarningCount;
+        return stat;
+    }, {
+        errorCount: 0,
+        fatalErrorCount: 0,
+        warningCount: 0,
+        fixableErrorCount: 0,
+        fixableWarningCount: 0
+    });
+}
+```
+
+可以看到它统计了5项数据：
+1. 错误数量
+1. 致命错误数量
+1. 警告数量
+1. 可修复错误数量
+1. 可修复警告数量
+
+然后是`get usedDeprecatedRules()`，用于获取**已使用的废弃规则**。这里它使用了惰性初始化技术，这样可以优化性能，只有真正访问时才进行计算，且只进行一次计算，第二次访问开始会使用保存下来的数据。
+
+一个小问题，不知道到这里你是否想起`processCLIEngineLintReport`这个方法，我们来回顾下。
+
+`cli.execute` => `engine.lintFiles` => `cliEngine.executeOnFiles` => `processCLIEngineLintReport`
+
+还好，这里线路并不长。我们将`cliEngine.executeOnFiles`的返回结果称为`report`，`report`拥有`usedDeprecateRules`属性，而`processCLIEngineLintReport`是为`report.results`的每个`result`添加`usedDeprecateRules`属性。
+
+这两个属性区别在于`report.usedDeprecateRules`可以拿到最近执行的所有*已使用废弃规则*，而`report.results[?].usedPrecateRules`是针对**某个文件**的所有*已使用废弃规则*。
+
+到这里，对`cliEngine.executeOnFiles`的执行流程应该有了基本了解，我们再总结下：
+1. 从`internalSlotsMap`里取出需要的数据
+2. 清除配置数组
+3. 清除缓存
+4. 迭代文件并校验（这个会进一步深入）
+5. 将缓存持久化到硬盘
+6. 返回，返回内容包括：
+    1. `results` 
+    2. `...calculateStatsPerRun(results)` 统计数据
+    3. `usedDeprecateRules` 
+
+如果你可以不看文档，复述这个执行流程，可以认为对流程已经初步掌握了。
+
+现在我们看迭代文件这一步的实现细节。
 
 ## 迭代源代码文件
 ```js
@@ -1603,6 +1687,70 @@ Object.keys(configuredRules).forEach(ruleId => {
  * @property {"problem"|"suggestion"|"layout"} type The rule type.
  */
  ```
+
+# 置后说明的部分
+## `eslint/eslint.js`
+这里先给出`constructor`部分的代码：
+```js
+class ESLint {
+    constructor(options = {}) {
+        //验证和规范化包装的 CLIEngine 实例的选项。
+        const processedOptions = processOptions(options);
+
+        //初始化cliEngine
+         const cliEngine = new CLIEngine(processedOptions);
+
+        // 添加到插件池
+        if (options.plugins) {...}
+
+        // 覆盖配置
+        if (hasDefinedProperty(options.overrideConfig)) {...}
+
+        // 更新缓存
+        if (updated) {...}
+
+        // 初始化私有属性
+        privateMembersMap.set(this, {...});
+    }
+}
+```
+
+![ESLint#constructor](https://pic.imgdb.cn/item/613984e944eaada73961c9b1.jpg)
+
+接下来进入`CLIEngine`的`constructor`，看看它在初始化的时候做了什么。
+
+## `cli-engine/cli-engine.js`
+```js
+constructor(providedOptions) {
+    // 整合options
+    const options = Object.assign(...)
+
+    // 创建一系列数据
+    const additionalPluginPool = new Map();
+    const cacheFilePath = getCacheFile(...);
+    const configArrayFactory = new CascadingConfigArrayFactory({...});
+    const fileEnumerator = new FileEnumerator({...});
+    const lintResultCache = ...;
+    const linter = new Linter({ cwd: options.cwd });
+    const lastConfigArrays = [configArrayFactory.getConfigArrayForFile()];
+
+    // 存储私有数据
+    internalSlotsMap.set(this, {...});
+
+    // 为fixes设置特殊过滤器
+    if (options.fix && options.fixTypes && options.fixTypes.length > 0) {...}
+}
+```
+
+![CliEngine#constructor](https://pic.imgdb.cn/item/6139851144eaada7396218f9.jpg)
+
+这里创建的私有数据先不深入，在接下来的使用到这些数据的时候，我们再进行解读。
+
+不过这里我要说一下：`CascadingConfigArrayFactory`这个类非常重要，我在下面用了一个专题特别进行说明，这个类的主要目的就是用于处理级联配置，如果对这一块不了解或者感兴趣的，可以看一下这个专题。
+
+现在我们对`new Eslint`已经有了一个基本的了解，接下来我们去了解下`engine.lintFiles(files)`的流程及其实现：
+
+![lint核心处理2](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
 
 # 专题：`@eslint/eslint`
 ## `CascadingConfigArrayFactory`
