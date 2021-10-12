@@ -886,7 +886,17 @@ eslint --fix --debug src test/t.js
 
 就是这样，到这里我们对`eslint`的命令行输入机制应该也有了一个基本了解。
 
-现在我们知道`files`是什么了，接下来真正了解`lintFiles(files)`的内部实现。
+现在我们知道`files`是什么了。
+
+还有一点问题，这里变量名叫做`files`并不是很合适，叫做`patterns`或者`globPatterns`可能会更合适，在接下来我们会知道`lintFiles`的定义的形参的名字就是`patterns`。
+
+为什么这里说`patterns`更合适，因为这里接受的是`glob patterns`，这种模式使用通配符指定文件集合，类似正则表达式，但更加简单。详情可以见(wiki-glob)[https://en.wikipedia.org/wiki/Glob_(programming)]
+
+稍微了解下`glob patterns`的概念，对于下面的代码理解会很有帮助，因为会多次提到`glob patterns`。
+
+另外要说一下，`lintFiles`这个名字依旧是合理的，因为通过`glob patterns`依旧是迭代匹配得到文件路径，然后读取代码进行处理。当然，`patterns`仍然可以是文件名或目录名组成的集合，我们接下来在`fileEnumerator._iterateFiles`可以看到迭代文件的细节。
+
+现在，一切准备就绪，让我们探索`lintFiles(files)`的实现。
 
 ## `engine.lintFiles(files)`
 ```js
@@ -1143,6 +1153,161 @@ function calculateStatsPerRun(results) {
 ## 迭代源代码文件
 ```js
 for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
+    //...
+}
+```
+
+### `fileEnumerator.iterateFiles`
+首先是通过文件迭代器取出我们需要的数据，我们看一下`fileEnumerator.iterateFiles`的实现：
+```js
+/**
+ * Iterate files which are matched by given glob patterns.
+ * @param {string|string[]} patternOrPatterns The glob patterns to iterate files.
+ * @throws {NoFilesFoundError|AllFilesIgnoredError} On an unmatched pattern.
+ * @returns {IterableIterator<FileAndConfig>} The found files.
+ */
+*iterateFiles(patternOrPatterns) {
+    const { globInputPaths, errorOnUnmatchedPattern } = internalSlotsMap.get(this);
+    const patterns = Array.isArray(patternOrPatterns) ? patternOrPatterns : [patternOrPatterns];
+
+    const set = new Set();//用于删除重复的路径项
+
+    for (const pattern of patterns) {
+        let foundRegardlessOfIgnored = false;//标识已经找到文件，不管是否忽略
+        let found = false;//标识已经找到文件且该文件没有被忽略
+
+        if (!pattern) continue;// 跳过空字符串。
+
+        // 迭代这个模式的文件。
+        for (const { config, filePath, flag } of this._iterateFiles(pattern)) {...}
+
+        // 如果errorOnUnmatchedPattern为true，找不到的时候会报错
+        if (errorOnUnmatchedPattern) {...}
+    }
+}
+```
+简单描述下这里的逻辑
+
+首先是取出需要的数据，数据容器是`internalSlotsMap`，注意啊，这里的`internalSlotsMap`是`FileEnumerator`的数据容器，之前的`internalSlotsMap`是`CLIEngine`的容器，两个名字一样的，但是所属模块和承载的数据并不一样。
+
+这里我们看一下取出来的两个数据`globInputPaths`，`errorOnUnmatchedPattern`
+- `globInputPaths` 布尔类型值，如果`true`是就认为所传的参数`patterns`是`glob`，会针对`patterns`进行`glob`解析。如果是`false`，就认为是`patterns`是文件路径集合，不进行`glob`解析
+- `errorOnUnmatchedPattern` 布尔类型值，如果为`true`，则找不到文件的时候会抛错；如果为`false`，找不到文件的时候不会抛错；默认是`true`
+
+然后是声明变量`patterns`，这里特别处理了一下，保证`patterns`必定是一个字符串组成的数组。
+
+然后来到下面，迭代`patterns`。
+
+如果`pattern`是空字符，直接跳过。
+
+使用`this._iterateFiles`迭代`pattern`得到数据，我们看一下`this._iterateFiles`的实现：
+```js
+/**
+ * Iterate files which are matched by a given glob pattern.
+ * @param {string} pattern The glob pattern to iterate files.
+ * @returns {IterableIterator<FileEntry>} The found files.
+ */
+_iterateFiles(pattern) {
+    const { cwd, globInputPaths } = internalSlotsMap.get(this);
+    const absolutePath = path.resolve(cwd, pattern);
+    const isDot = dotfilesPattern.test(pattern);
+    const stat = statSafeSync(absolutePath);
+
+    if (stat && stat.isDirectory()) {
+        return this._iterateFilesWithDirectory(absolutePath, isDot);
+    }
+    if (stat && stat.isFile()) {
+        return this._iterateFilesWithFile(absolutePath);
+    }
+    if (globInputPaths && isGlobPattern(pattern)) {
+        return this._iterateFilesWithGlob(absolutePath, isDot);
+    }
+
+    return [];
+}
+```
+这里逻辑比较纯粹，首先根据`cwd`、`pattern`得到一个绝对路径，然后判断文件或目录是否存在。
+1. 如果存在且是目录，走`this._iterateFilesWithDirectory`
+2. 如果存在且是文件，走`this._iterateFilesWithFile`
+3. 如果是`glob`解析模式，并且`pattern`符合`glob`模式，则走`this._iterateFilesWithGlob`
+4. 以上都不是，则返回空数组
+
+这里函数名取得很好，我们只看名字就知道作用了，而且也极易看出每个函数的不同点，`Eslint`里很多名字起的都简明易懂，只看名字就知道作用了，很值得借鉴。
+
+现在会过来过来，看一下它返回什么，返回`IterableIterator<FileEntry>`，这是一个迭代器，每次迭代返回`FileEntry`类型的值，让我们看一下`FileEntry`的类型定义：
+```js
+/**
+ * @typedef {Object} FileEntry
+ * @property {string} filePath The path to a target file.
+ * @property {ConfigArray} config The config entries of that file.
+ * @property {NONE|IGNORED_SILENTLY|IGNORED} flag The flag.
+ * - `NONE` means the file is a target file.
+ * - `IGNORED_SILENTLY` means the file should be ignored silently.
+ * - `IGNORED` means the file should be ignored and warned because it was directly specified.
+ */
+```
+有三个属性：
+1. `filePath` 文件路径，`string`类型
+2. `config` 配置项，是`ConfigArray`类型，这个类型之后会深入介绍
+3. `flag` 只能是以下三种值之一：
+    - `'NONE'` 目标文件
+    - `'IGNORED_SILENTLY'` 静默忽略文件，只忽略不进行警告
+    - `'IGNORED'` 忽略并进行警告的文件
+
+这里我要说一下`'IGNORED_SILENTLY'`和`'IGNORED'`的区别，不是作用上的区别，而是什么时候会被设置为`'IGNORED_SILENTLY'`，什么时候会被设置为`'IGNORED'`。
+
+如果走的是`this._iterateFilesWithFile`，那么它的`flag`属性可能是`'NONE'`或`'IGNORED'`。
+
+而`_iterateFilesWithDirectory`和`_iterateFilesWithGlob`底层实现都是`_iterateFilesRecursive`，这个方法它迭代的`flag`可能是`'NONE'`或`'IGNORED_SILENTLY'`
+
+总结一下，就是如果`pattern`是文件路径则会参与迭代，但是会直接返回并生成警告，不会参与校验；否则直接忽略不参与迭代。
+
+然后我们看`_iterateFiles`获取数据进行的操作：
+```js
+for (const { config, filePath, flag } of this._iterateFiles(pattern)) {
+    foundRegardlessOfIgnored = true;
+    if (flag === IGNORED_SILENTLY) continue; //如果是静默忽略文件，则跳过
+    found = true;
+
+    // 只添加不重复的文件路径并返回值
+    if (!set.has(filePath)) {
+        set.add(filePath);
+        yield {
+            config,
+            filePath,
+            ignored: flag === IGNORED //这个是非静默忽略
+        };
+    }
+}
+```
+可以看到，重复的路径会被忽略，被指定忽略的文件也会被忽略。
+
+返回值里变化的部分是`ignored`，它是一个布尔值，`true`表示被忽略，`false`表示不忽略，这样更纯粹也更加简单一些。
+
+最后看一下找不到文件时，报错的逻辑：
+```js
+//errorOnUnmatchedPattern为true才进行报错
+if (errorOnUnmatchedPattern) {
+    if (!foundRegardlessOfIgnored) {
+        //没有文件与 glob 匹配时的错误类型
+        throw new NoFilesFoundError(
+            pattern,
+            !globInputPaths && isGlob(pattern) //如果为true，则表示是`glob`，且`glob`被禁用
+        );
+    }
+    if (!found) {
+        //有 glob 匹配的文件时的错误类型，但所有文件都被忽略。
+        throw new AllFilesIgnoredError(pattern);
+    }
+}
+```
+这里逻辑比较简单，直接看代码或者注释应该就能看懂了。
+
+现在我们知道迭代的实现，以及每次迭代的返回结果了，我们回到迭代的主体。
+
+### 迭代文件校验
+```js
+for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
     //是否忽略
     if (ignored) {
         results.push(createIgnoreResult(filePath, cwd));
@@ -1155,7 +1320,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
     //取出缓存并添加到results
     if (lintResultCache) {...}
 
-    // Do lint.
+    //* Do lint.
     const result = verifyText({...});
 
     //将lint结果添加至results
@@ -1166,9 +1331,64 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 }
 ```
 
+流程示意图：
+
 ![迭代源代码文件](https://pic.imgdb.cn/item/613ace8344eaada739684d9d.jpg)
 
-这里值得关注的是`do lint`部分，调用了`verifyText`方法，我们看一下。
+一开始会判断文件是否是忽略文件，之前我们提到，文件是否忽略分成三种情况：
+1. `NONE` 不忽略
+2. `IGNORED_SILENTLY` 静默忽略
+3. `IGNORED` 非静默忽略
+
+静默忽略的文件不会参与到迭代中，这里`ignored`为`true`必然是非静默忽略，我们现在看一下非静默忽略`Eslint`是怎么处理的。
+
+会`createIgnoreResult(filePath, cwd)`创建一个结果`push`到`results`，就是说虽然是忽略文件，但是依旧会创建一个结果，我们稍微看一下`createIgnoreResult`的实现。
+
+```js
+/**
+ * Returns result with warning by ignore settings
+ * @param {string} filePath File path of checked code
+ * @param {string} baseDir Absolute path of base directory
+ * @returns {LintResult} Result with single warning
+ * @private
+ */
+function createIgnoreResult(filePath, baseDir) {
+    let message;
+    const isHidden = filePath.split(path.sep).find(segment => /^\./u.test(segment));
+    const isInNodeModules = baseDir && path.relative(baseDir, filePath).startsWith("node_modules");
+
+    if (isHidden) {
+        message = "File ignored by default.  Use a negated ignore pattern (like \"--ignore-pattern '!<relative/path/to/filename>'\") to override.";
+    } else if (isInNodeModules) {
+        message = "File ignored by default. Use \"--ignore-pattern '!node_modules/*'\" to override.";
+    } else {
+        message = "File ignored because of a matching ignore pattern. Use \"--no-ignore\" to override.";
+    }
+
+    return {
+        filePath: path.resolve(filePath),
+        messages: [
+            {
+                fatal: false, //是否是致命错误
+                severity: 1, //严重等级0|1|2 这是警告级别
+                message
+            }
+        ],
+        errorCount: 0,
+        warningCount: 1,
+        fixableErrorCount: 0,
+        fixableWarningCount: 0
+    };
+}
+```
+这里代码也比较简单，主要就是根据情况生成三种警告，其他的返回值都是一样的，我们三种情况
+1. 路径中的某一段如果以`.`开头，则表示这个目录是应该隐藏的
+2. 是否在`node_modules`目录下，这个也应该被隐藏
+3. 默认情况
+
+`if (!lastConfigArrays.includes(config)) lastConfigArrays.push(config);`
+
+这一行是将`config`放到`lastConfigArrays`里面，判断是不想加重复的`config`，没什么好说的。
 
 ### `verifyText`
 ```js
@@ -1786,11 +2006,6 @@ Hello world!
 ## `BOM`
 `BOM`全称`byte-order mark`（字节顺序标记）
 
-## `glob pattern`【命令行通配符】
-在计算机编程中，`glob pattern`用通配符指定文件名集。
-
-具体语法见 [阮一峰 命令行通配符教程](http://www.ruanyifeng.com/blog/2018/09/bash-wildcards.html)
-
 # 解答
 ## `eslint`是怎么默认读取`eslintrc.*`文件配置的？
 涉及引用库：
@@ -1918,3 +2133,4 @@ const configFilenames = [
 - [`npm debug`](https://github.com/visionmedia/debug/blob/master/test.js)
 - [阮一峰 命令行通配符教程](http://www.ruanyifeng.com/blog/2018/09/bash-wildcards.html)
 - [JSON Schema](http://json-schema.org/)
+- [MDN 迭代器和生成器](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Guide/Iterators_and_Generators#iterables)
