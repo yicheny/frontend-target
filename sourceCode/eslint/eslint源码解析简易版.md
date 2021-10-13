@@ -328,8 +328,7 @@ module.exports = {
         }
     },
 
-    //create我放到下面独立章节做讲解
-    //这里只需要知道这里一个返回对象类型的函数即可
+    //目前知道这里是一个返回对象类型的函数即可（这里不深入，因为关于create的相关内容太多了）
     create: function(context) { 
         return {
             // callback functions
@@ -337,186 +336,6 @@ module.exports = {
     }
 };
 ```
-
-### `create`
-首先我们看一下源码中涉及`create`的部分：
-```js
-/**
- * 运行rule，获取它提供的listeners
- * @param {Rule} rule 具有create方法的标准rule
- * @param {Context} ruleContext 应该传递给rule的上下文
- * @throws {any} 执行rule.create所出现的任何错误
- * @returns {Object} selectors 和 listeners 组成的映射对象
- */
-function createRuleListeners(rule, ruleContext) {
-    try {
-        return rule.create(ruleContext);
-    } catch (ex) {
-        ex.message = `Error while loading rule '${ruleContext.id}': ${ex.message}`;
-        throw ex;
-    }
-}
-```
-
-### `Context`
-`Context`包含规则上下文相关的信息，有以下属性：
-- `parserOptions` 解析器选项
-- `id`
-- `options` 已配置选项
-- `settings` 共享设置
-- `parserPath` 配置中`parser`的名称
-- `parserServices` 解析器中为规则提供服务的对象
-
-`Context`有以下方法：
-- `getAncestors()` - 返回当前遍历节点的祖先数组，从 AST 的根节点开始，一直到当前节点的直接父节点。这个数组不包括当前遍历的节点本身。
-- `getDeclaredVariables(node)` - 返回由给定节点声明的变量 列表。此信息可用于跟踪对变量的引用。
-- `getFilename()` - 返回与源文件关联的文件名。
-- `getScope()` - 返回当前遍历节点的 `scope`。此信息可用于跟踪对变量的引用
-- `getSourceCode()` - 返回一个`SourceCode`对象，你可以使用该对象处理传递给 `ESLint` 的源代码。
-- `markVariableAsUsed(name)` - 在当前作用域内用给定的名称标记一个变量，如果找到一个具有给定名称的变量并将其标记为已使用，则返回 `true`，否则返回 `false`。
-- `report(descriptor)` - 报告问题的代码
-
-#### `context.getScope()`
-这个方法返回一个作用域。【作用域是什么类型，有什么用？】
-
-该方法返回的作用域具有以下类型：
-| AST Node Type | Scope Type | 
-| --- | --- | 
-| `Program` | `global` | 
-| `FunctionDeclaration` | `function` | 
-| `FunctionExpression` | `function` | 
-| `ArrowFunctionExpression` | `function` |
-| `ClassDeclaration` | `class` |
-| `ClassExpression` | `class` |
-| `BlockStatement` ※1 | `block` | 
-| `SwitchStatement` ※1 | `switch` | 
-| `ForStatement` ※2 | `for` |
-| `ForInStatement` ※2 | `for` | 
-| `ForOfStatement` ※2 | `for` |	
-| `WithStatement` | `with` | 
-| `CatchClause` | `catch` |
-| others | ※3 |
-
-※1 仅当配置的解析器提供块作用域特性时才使用，`parserOptions.ecmaVersion`必须要大于等于6才能使用块级作用域特性
-
-※2 只有当 `for` 语句将迭代变量定义为块作用域的变量时 (例如，`for (let i = 0;;) {}`)。
-
-※3 具有自己作用域的最近祖先节点的作用域。如果最近的祖先节点有多个作用域，那么它选择最内部的作用域（例如，如果`Program#sourceType` 是 `"module"`，则 `Program` 节点有一个 `global` 作用域和一个 `module` 作用域。最内层的作用域是 `"module"` 作用域。）。
-
-#### `context.report()`
-用来发布警告或错误【由开发者决定】
-
-该方法只接受一个参数，是一个对象，包含以下属性：
-- `message`(可选) 有问题的消息
-- `messageId`(可选) 通过`messageId`可以使用`meta.messages`定义的消息，而不必自己定义`message`
-- `node`(可选) - 与问题有关的 `AST` 节点。如果存在且没有指定 `loc`，那么该节点的开始位置被用来作为问题的位置。
-- `loc`(可选) - 用来指定问题位置的一个对象。如果同时指定的了 `loc` 和 `node`，那么位置将从`loc`获取而非`node`
-    - `start` - 开始位置
-        - `line` - 问题发生的行号，从 `1` 开始。
-        - `column` - 问题发生的列号，从 `0` 开始。
-    - `end` - 结束位置
-        - `line` - 问题发生的行号，从 `1` 开始。
-        - `column` - 问题发生的列号，从 `0` 开始。
-- `data`(可选) - 提供的数据给`message`的占位符使用【下面有示例】
-- `fix`(可选) - 用来解决问题的修复函数
-
-> 请注意，`node` 或 `loc` 至少有一个是必须的；`message`和`messageId`至少有一个是必须的
-
-##### `data`示例
-```js
-context.report({
-    node: node,
-    message: "Unexpected identifier: {{ identifier }}",
-    data: {
-        identifier: node.name
-    }
-});
-```
-
-##### `messageId`示例
-```js
-// in your rule
-module.exports = {
-    meta: {
-        messages: {
-            avoidName: "Avoid using variables named '{{ name }}'"
-        }
-    },
-    create(context) {
-        return {
-            Identifier(node) {
-                if (node.name === "foo") {
-                    context.report({
-                        node,
-                        messageId: "avoidName",
-                        data: {
-                            name: "foo",
-                        }
-                    });
-                }
-            }
-        };
-    }
-};
-```
-
-##### `fix`
-如果想要支持对问题的修复，需要提供`fix`函数：
-```js
-context.report({
-    node: node,
-    fix: function(fixer){
-        return fixer.insertTextAfter(node,';)
-    }
-})
-```
-
-###### 参数`fixer`
-`fixer`有以下方法：
-1. `insertTextAfter(nodeOrToken, text)` 在给定的节点或记号之后插入文本
-1. `insertTextAfterRange(range, text)` 在给定的范围之后插入文本
-1. `insertTextBefore(noderOrToken, text)`
-1. `insertTextBeforeRange(range, text)` 
-1. `remove(nodeOrToken)` 删除给定节点或记号
-1. `removeRange(range)` 删除给定范围内的文本
-1. `replaceText(nodeOrText, text)`
-1. `replaceTextRange(range, text)`
-
-这些方法都返回一个`fixing`对象。
-
-###### 返回值
-可以返回以下值：
-1. 一个`fixing`对象
-1. 一个包含`fixing`对象的数组
-1. 一个可迭代的对象，用来枚举`fixing`对象。
-
-如果让`fix`函数返回多个`fixing`对象，那么这些对象不能重叠。
-
-修复的最佳实践：
-1. 避免任何可能改变代码运行时行为和导致其停止工作的修复。
-1. 做尽可能小的修复。那些不必要的修复可能会与其他修复发生冲突，应该避免。
-1. 使每条消息只有一个修复。这是强制的，因为你必须从 `fix()` 返回修复操作的结果。
-1. 由于所有的规则只第一轮修复之后重新运行，所以规则就没必要去检查一个修复的代码风格是否会导致另一个规则报告错误。
-
-#### `options`
-有些规则可能需要输入可选项，可选项可以通过`.eslintrc`、命令行、注释等方式进行输入，比如：
-```js
-{
-    "quotes": ["error", "double"]
-}
-```
-
-规则使用：
-```js
-module.exports = {
-    create: function(context){
-        const isDouble = (context.options[0] === 'double'); //注意，错误级别不属于`context.options`
-        //...
-    }
-}
-```
-
-#### `getSourceCode()`
 
 ## 关于`.eslintignore`
 只会使用**当前目录**下的`.eslintignore`文件
@@ -570,6 +389,7 @@ module.exports = {
 
 所以我们接下来会进入`lib/cli.js`文件中查看代码。
 
+## `process.exitCode`
 不过在此之前，我要说一下`process.exitCode`，在接下来的`cli.execute()`会返回几种值：`0`、`1`、`2`，返回值会被赋值给`process.exitCode`。
 
 对于`process.exitCode`的值及其作用我们有了解的必要，这样可以让我们理解`cli.execute()`返回值的作用，不然的话可能有的人会疑惑`cli.execute()`这些数字值的意义。
@@ -604,7 +424,7 @@ console.log(2)
 
 有些情况下使用`process.exit()`也是合理的选择，了解两者的用法和区别，可以根据情况选中其中适合的一种。
 
-# `lib/cli.js`
+# `cli.execute`
 ```js
 const cli = {
     async execute(args, text) {
@@ -627,11 +447,9 @@ const cli = {
 
 ![cli.execute](https://pic.imgdb.cn/item/6163aa712ab3f51d91ec28cf.jpg)
 
-这里特别说明一下，源码里`cli`对象真的只有`execute`一个方法。
 
-下面我说明下`cli.execute`在这里什么，为什么要这么做？
-
-首先，我们知道在执行命令行指令时，我们输入的是字符串，比如说执行类似`order -s=true -b=1`这种指令，通过`process.argv`取到的默认是字符串，很明显这样的原始信息是很不方便的，比如在这里我们可以希望直接得到的参数是这样的：
+## 解析`options`
+我们知道在执行命令行指令时，我们输入的是字符串，比如说执行类似`order -s=true -b=1`这种指令，通过`process.argv`取到的默认是字符串，很明显这样的原始信息是很不方便的，比如在这里我们可以希望直接得到的参数是这样的：
 ```js
 {
     s:true,
@@ -656,18 +474,22 @@ if (options.help) {
 }
 ```
 
+## 处理命令并退出
 有很多命令是和核心`linter`无关的，比如说`eslint --help`这个是输入帮助列表，`eslint --version`是打印当前`eslint`版本，它们都是执行一些功能之后**直接退出**。
 
 所以一开始优先处理这部分命令，会在执行`linter`之前直接退出。
 
 这部分不是说不重要，只是说这里不是我们想要了解的`linter`重心，所以我们还是得往下面的部分走。
 
+## *`linter`
 然后来到了`linter`这部分，这部分我们可以认为是对`linter`的核心处理，我们在这里解析`eslintrc.*`的配置项，并且执行`rule`。
 
 这部分我会在下一节做详细说明，这里知道它的作用就可以。
 
+## `quite`
 接着走到下面，如果有`--quite`，启用`quite`模式会过滤掉警告。
 
+## `printResult`
 然后接下来到`printResult`这部分，代码类似这样：
 ```js
 if(await printResults(engine, resultsToPrint, options.format, options.outputFile)){
@@ -782,7 +604,7 @@ if (await printResults(engine, resultsToPrint, options.format, options.outputFil
 
 现在我们进入`lint`核心处理部分，看这里做了什么。
 
-## `lint`核心处理
+# `lint`核心处理
 ```js
 const engine = new ESLint(translateOptions(options));//初始化ESLint
 let results;
@@ -793,6 +615,7 @@ if (useStdin) {//使用--stdin会走这里
     results = await engine.lintFiles(files);
 }
 
+//这个逻辑不属于核心逻辑，不过我还是放到这里了，因为项目里基本离不开这个命令，属于特别常用和重要的部分，考虑到这点放到了这里，不过实际上它不是lint的核心逻辑
 if (options.fix) {
     await ESLint.outputFixes(results); //将修复后的结果写入文件
 }
@@ -802,6 +625,7 @@ if (options.fix) {
 
 ![lint核心处理](https://pic.imgdb.cn/item/6139828a44eaada7395e519d.jpg)
 
+## 初始化`Eslint`
 可以看到这里初始化了一个`Eslint`实例，它接收的参数是`translateOptions(options)`，我们知道`options`是命令行参数解析得到的参数对象，那么这里的`translateOptions()`函数是做什么的？
 
 这里它对`options`做了转换，为什么需要转换？因为`options`和`Eslint`初始化需要的数据是有所差异的，所以这里是将`options`的转换为`CLIEngine`所需要的初始化参数。
@@ -833,12 +657,14 @@ function translateOptions({cache,inlineConfig,reportUnusedDisableDirectives}){
 
 总之，现在我们先得到了一个`Eslint`的实例`engine`
 
+## *`lint`
 然后接着往下走，接下来是`linter`的关键，这里有个小分支，如果使用`--stdin`则调用`lintText`，否则调用`lintFiles`
 
 这里如果我们使用`--stdin`则读取得到的是源码本身，可以直接`lint`，所以是`lintText`；而如果常规模式，我们会传递一个文件根目录，根据这个目录递归读取文件得到代码，然后进行`lint`，所以是`lintFiles`
 
 我们这里优先关注`lintFiles`的实现。
 
+## `fix`
 最后是`options.fix`这里，其实这个并不属于`lint`的重点，这里只是决定是否将修复结果写入到文件。
 
 现在我们再回顾下流程图：
@@ -853,6 +679,7 @@ function translateOptions({cache,inlineConfig,reportUnusedDisableDirectives}){
 
 综上，先看`lintFiles`的执行过程。
 
+## 关于`files`
 我们先看一下`lintFiles(files)`接受的参数`files`，它是这么声明的`const files = options._`
 
 那么这个`options._`是什么，描述的话这里存放的是散落的输入值，我举个例子，使用`optionator`解析，如果输入命令
@@ -898,7 +725,7 @@ eslint --fix --debug src test/t.js
 
 现在，一切准备就绪，让我们探索`lintFiles(files)`的实现。
 
-## `engine.lintFiles(files)`
+# `engine.lintFiles(files)`
 ```js
 async lintFiles(patterns) {
     //patterns必须是非空字符串 或 非空字符字符串数组
@@ -914,8 +741,11 @@ async lintFiles(patterns) {
     );
 }
 ```
-这里首先是对参数`patterns`的校验，它必须是非空字符串 或 非空字符字符串数组，否则直接抛错退出。
 
+## 校验`patterns`
+这里首先是对参数`patterns`的校验，它必须是**非空字符串** 或 **非空字符字符串数组**，否则直接抛错退出。
+
+## 从`privateMembersMap`取出数据
 然后是取出`cliEngine`，这里`privateMembersMap`是`WeakMap`类型，它是一个全局变量，键名是`Eslint`实例，键值是一个对象，这个对象有两个属性`cliEngine`、`options`。
 
 我们看一下`privateMembersMap`的基本类型定义：
@@ -973,6 +803,7 @@ key = null; //原来的对象会被回收
 1. `Map`的键名可以是任意类型，且可枚举
 1. `WeakMap`的键名必须是对象，不可枚举
 
+## `processCLIEngineLintReport`
 现在我们取出`engine`，然后执行
 ```js
 return processCLIEngineLintReport(
@@ -1011,7 +842,7 @@ function processCLIEngineLintReport(cliEngine, { results }) {
 
 然后我们回到`cliEngine.executeOnFiles(patterns)`这里，它非常的关键，它的执行结果会作为参数传递给`processCLIEngineLintReport`，我们进入查看代码。
 
-## `cliEngine.executeOnFiles(patterns)`
+# `cliEngine.executeOnFiles(patterns)`
 ```js
 /**
  * Executes the current configuration on an array of file and directory names.
@@ -1042,12 +873,15 @@ executeOnFiles(patterns) {
 
 ![cliEngine.executeOnFiles](https://pic.imgdb.cn/item/6139d62844eaada7390532f2.jpg)
 
+## 从`internalSlotsMap`取数据
 流程的一开始是从`internalSlotsMap`里取出会使用到的数据，和`privateMembersMap`类似，`internalSlotsMap`也是一个`WeakMap`类型。
 
+## 清除`lastConfigArrays`
 然后再进行其他操作之前，先清除上次使用的配置数组，这么做的原因是什么？
 
 `lastConfigArrays`在迭代文件时会进行`push(config)`，然后在其他地方被使用，所以我们需要持有这个`lastConfigArrays`的引用。然后从它的名字也能出来，我们只保留最后一次配置数组，因为使用的时候只需要最新一次的配置数据，所以在放置新的`config`之前，需要将上一次的`config`全部清除掉。
 
+## 清除缓存
 在清除`lastConfigArrays`之后，我们删除缓存文件，理由和`lastConfigArrays`类似，我们看一下这里是怎么删除缓存的：
 ```js
 if (!cache) {
@@ -1068,10 +902,45 @@ if (!cache) {
 
 不过这里做了一个判断，如果文件不存在或文件为只读时则忽略，不做抛错。
 
+## *文件迭代
 删除缓存的下一步是迭代文件，并进行校验，这一步很重要，我放到下面章节重点说明。
 
-迭代文件之后是将缓存持久化的硬盘上，迭代文件时会产生缓存，这里将缓存持久化到硬盘上（为什么要这么做？我估计是为了节省内存空间，需要进一步验证）
+## 缓存持久化
+接下来是缓存持久化，我们看一下代码：
+```js
+if (lintResultCache) lintResultCache.reconcile();
+```
+这里首先判断是否存在`lintResultCache`，那么什么情况下会有这个`lintResultCache`呢？
 
+我们知道`lintResultCache`是从`internalSlotsMap`里取出来的，那又是什么时候`lintResultCache`被放到`internalSlotsMap`里面的？
+
+答案是`CLIEngine`类初始化的时候，我们看一下相关代码：
+```js
+//CLIEngine#constructor
+const lintResultCache =
+            options.cache ? new LintResultCache(cacheFilePath, options.cacheStrategy) : null;
+```
+这里可以看出，当命令行输入`--cache`时会创建这个实例，默认是`false`不进行创建。
+
+另外说一下，这里可以看出`LintResultCache`有两个初始化参数，缓存文件路径和缓存策略。其中`cacheFilePath`是这么得到的：
+```js
+const cacheFilePath = getCacheFile(options.cacheLocation || options.cacheFile,options.cwd);
+```
+
+然后是`Eslint`有设置默认值，我们看一下相关的默认值：
+```js
+module.exports = {
+    cache: false,
+    cacheLocation: "",
+    cacheFile: ".eslintcache",
+    cacheStrategy: "metadata",
+};
+```
+这些默认值表明，默认不开启缓存，如果开启，则默认路径是`.eslintcache`，默认缓存策略是`metadata`
+
+如果开启缓存，这里会将缓存持久化到硬盘上。
+
+## 返回值
 最后我们看一下返回值：
 ```js
 return {
@@ -1150,14 +1019,14 @@ function calculateStatsPerRun(results) {
 
 现在我们看迭代文件这一步的实现细节。
 
-## 迭代源代码文件
+# 迭代源代码文件
 ```js
 for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
     //...
 }
 ```
 
-### `fileEnumerator.iterateFiles`
+## `fileEnumerator.iterateFiles`
 首先是通过文件迭代器取出我们需要的数据，我们看一下`fileEnumerator.iterateFiles`的实现：
 ```js
 /**
@@ -1191,7 +1060,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 首先是取出需要的数据，数据容器是`internalSlotsMap`，注意啊，这里的`internalSlotsMap`是`FileEnumerator`的数据容器，之前的`internalSlotsMap`是`CLIEngine`的容器，两个名字一样的，但是所属模块和承载的数据并不一样。
 
 这里我们看一下取出来的两个数据`globInputPaths`，`errorOnUnmatchedPattern`
-- `globInputPaths` 布尔类型值，如果`true`是就认为所传的参数`patterns`是`glob`，会针对`patterns`进行`glob`解析。如果是`false`，就认为是`patterns`是文件路径集合，不进行`glob`解析
+- `globInputPaths` 布尔类型值，如果`true`是就认为所传的参数`patterns`是`glob`，会针对`patterns`进行`glob`解析。如果是`false`，就认为是`patterns`是文件路径集合，不进行`glob`解析。默认是`true`
 - `errorOnUnmatchedPattern` 布尔类型值，如果为`true`，则找不到文件的时候会抛错；如果为`false`，找不到文件的时候不会抛错；默认是`true`
 
 然后是声明变量`patterns`，这里特别处理了一下，保证`patterns`必定是一个字符串组成的数组。
@@ -1200,6 +1069,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 
 如果`pattern`是空字符，直接跳过。
 
+### `this._iteraterFiles`
 使用`this._iterateFiles`迭代`pattern`得到数据，我们看一下`this._iterateFiles`的实现：
 ```js
 /**
@@ -1234,6 +1104,7 @@ _iterateFiles(pattern) {
 
 这里函数名取得很好，我们只看名字就知道作用了，而且也极易看出每个函数的不同点，`Eslint`里很多名字起的都简明易懂，只看名字就知道作用了，很值得借鉴。
 
+### `FileEntry`
 现在会过来过来，看一下它返回什么，返回`IterableIterator<FileEntry>`，这是一个迭代器，每次迭代返回`FileEntry`类型的值，让我们看一下`FileEntry`的类型定义：
 ```js
 /**
@@ -1262,6 +1133,7 @@ _iterateFiles(pattern) {
 
 总结一下，就是如果`pattern`是文件路径则会参与迭代，但是会直接返回并生成警告，不会参与校验；否则直接忽略不参与迭代。
 
+### 返回值
 然后我们看`_iterateFiles`获取数据进行的操作：
 ```js
 for (const { config, filePath, flag } of this._iterateFiles(pattern)) {
@@ -1284,6 +1156,7 @@ for (const { config, filePath, flag } of this._iterateFiles(pattern)) {
 
 返回值里变化的部分是`ignored`，它是一个布尔值，`true`表示被忽略，`false`表示不忽略，这样更纯粹也更加简单一些。
 
+### 找不到文件抛错
 最后看一下找不到文件时，报错的逻辑：
 ```js
 //errorOnUnmatchedPattern为true才进行报错
@@ -1305,7 +1178,6 @@ if (errorOnUnmatchedPattern) {
 
 现在我们知道迭代的实现，以及每次迭代的返回结果了，我们回到迭代的主体。
 
-### 迭代文件校验
 ```js
 for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns)) {
     //是否忽略
@@ -1335,6 +1207,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 
 ![迭代源代码文件](https://pic.imgdb.cn/item/613ace8344eaada739684d9d.jpg)
 
+## “忽略”处理
 一开始会判断文件是否是忽略文件，之前我们提到，文件是否忽略分成三种情况：
 1. `NONE` 不忽略
 2. `IGNORED_SILENTLY` 静默忽略
@@ -1344,6 +1217,7 @@ for (const { config, filePath, ignored } of fileEnumerator.iterateFiles(patterns
 
 会`createIgnoreResult(filePath, cwd)`创建一个结果`push`到`results`，就是说虽然是忽略文件，但是依旧会创建一个结果，我们稍微看一下`createIgnoreResult`的实现。
 
+### `createIgnoreResult`
 ```js
 /**
  * Returns result with warning by ignore settings
@@ -1386,11 +1260,46 @@ function createIgnoreResult(filePath, baseDir) {
 2. 是否在`node_modules`目录下，这个也应该被隐藏
 3. 默认情况
 
+## 放入`lastConfigArrays`
 `if (!lastConfigArrays.includes(config)) lastConfigArrays.push(config);`
 
 这一行是将`config`放到`lastConfigArrays`里面，判断是不想加重复的`config`，没什么好说的。
 
-### `verifyText`
+## 使用缓存
+之前分析过，知道缓存默认不开启，不过这里我们看一下开启缓存会怎么走：
+```js
+const cachedResult = lintResultCache.getCachedLintResults(filePath, config);
+
+if (cachedResult) {
+    const hadMessages =
+        cachedResult.messages &&
+        cachedResult.messages.length > 0;
+
+    if (hadMessages && fix) {
+        debug(`Reprocessing cached file to allow autofix: ${filePath}`);
+    } else {
+        debug(`Skipping file since it hasn't changed: ${filePath}`);
+        results.push(cachedResult);
+        continue;
+    }
+}
+```
+首先是取出缓存，如果有缓存，没有缓存走常规路线。
+
+如果有缓存，检查是否有消息，如果有消息，且设置了`--fix`，那么会启用修复，在开启`--debug`的情况下会输出一行打印，告知用户应该修复这个缓存文件存在的问题。
+
+如果没有消息或者没有设置`--fix`，那么会直接使用缓存作为这一次的迭代结果，然后跳过这次迭代。
+
+## *`verifyText`
+如果没有开启缓存或者没有缓存结果，或者缓存文件存在问题且开启了`--fix`，我们会走`verifyText`，这个方法就是`lint`的关键，它会返回`lint`后的结果，这个方法我们下面细说。
+
+## 放入`results`
+然后下面是`results.push(result)`，没什么好说的
+
+## 放入缓存
+然后在开启缓存的情况下，会将这次结果放到缓存里，这样一次完整的文件迭代处理就完成了。
+
+# `verifyText`
 ```js
 function verifyText({...}) {
     //处理path
