@@ -1328,7 +1328,7 @@ function verifyText({...}) {
 
     if (fixed) result.output = output;
     
-    if (/*如果有错误且无输出*/) result.source = text;
+    if (/*有错误或警告 且无输出*/) result.source = text;
 
     return result;
 }
@@ -1374,20 +1374,20 @@ const result = {
  * @property {number} [endColumn] 结束位置的列号【从 1 开始】
  * @property {number|undefined} line 从 1 开始的行号。
  * @property {number} [endLine] 结束位置的行号【从 1 开始】
- * @property {boolean} fatal  是否是致命错误
- * @property {{range:[number,number], text:string}} [fix] 自动修复信息
  * @property {string} message 错误信息
  * @property {string|null} ruleId 生成这个消息的规则Id
+ * @property {boolean} fatal  是否是致命错误
  * @property {0|1|2} severity 消息的严重级别
+ * @property {{range:[number,number], text:string}} [fix] 自动修复信息
  * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] 建议信息
  */
  ```
- 如果以后提到`LintMessage`类型，看看源码里的定义，这个能背下来就最好了。
+ 如果以后提到`LintMessage`类型，不清楚的可以会过来看看源码里的定义，不过最好还是达到看到属性就知道作用的程度，这样阅读之后的代码会很舒服，这里我已经调整了属性的定义顺序以便于理解和记忆
 
 ### `calculateStatsPerFile`
 然后是`calculateStatsPerFile`方法，这里不知道你是否想起来一个名字很类似的方法`calculateStatsPerRun`，这个方法是在`cliEngine.executeOnFiles`返回值里使用到的。
 
-从名字就可以看出很多东西，`calculateStatsPerFile`是计算每个文件的统计数据，而`calculateStatsPerRun`是每次运行计算统计，实际上`caculateStatsPerRun`就是将每个文件的统计数据叠加而已，代码就是这么做的（上面已经展示了代码，这里不重复展示了）
+从名字就可以看出很多东西，`calculateStatsPerFile`是计算每个文件的统计数据，而`calculateStatsPerRun`是每次运行计算统计，实际上`calculateStatsPerRun`就是将每个文件的统计数据叠加而已，代码就是这么做的（上面已经展示了代码，这里不重复展示了）
 
 然后现在我们看下`calculateStatsPerFile`的实现
 ```js
@@ -1419,7 +1419,51 @@ function calculateStatsPerFile(messages) {
 ```
 这个逻辑还是比较简单，不逐步说明了，就是根据`message`循环叠加统计，如果对`message`属性不熟悉的，可以回到上面看看`LintMessage`的定义。
 
-返回值和`caculateStatsPerRun`的返回值类型是一样的，也不再说明了。
+返回值和`calculateStatsPerRun`的返回值类型是一样的，就不再说明了。
+
+## 替换`output`
+如果已经进行修复，则用这一次校验返回的`output`替换掉原来的`results.output`
+
+## 设置`source`
+让我们看一下什么情况下会设置`source`属性
+```js
+if (
+    //有错误或警告（或两者都有）
+    //且 output为undefined的情况下
+    result.errorCount + result.warningCount > 0 &&
+    typeof result.output === "undefined"
+) {
+    result.source = text; //将源码设置到source属性上
+}
+```
+逻辑很清晰，也很简洁。
+
+不过，真正值得思考的是：“为什么只在这种情况下设置`source`？”
+
+说到这个，就需要提到`printResults`这个方法（在`cli.execute`），不知道你还有没有印象，这个方法里我们根据`option.format`属性取出格式化程序，然后对`results`进行格式化。
+
+取格式化程序的过程也很繁杂，不说细节了，简单来说`eslint`提供了十几种格式化程序，可以将`results`原始的`lintResult[]`进行格式化进行提示。
+
+可以通过`--format`进行格式化程序的选择，默认格式化程序是`stylish`，如果想了解所有的格式化程序请看[`ESLint Formatters`](https://cn.eslint.org/docs/user-guide/formatters/#codeframe)
+
+然后，在这些格式化程序，其中有一种格式化程序`codeframe`使用道理`result.source`，它是这么使用的：
+```js
+const sourceCode = parentResult.output ? parentResult.output : parentResult.source;
+```
+我整个流程查了一遍，目前只有这里使用了`result.source`属性
+
+从这里我们看出来刚刚的逻辑判断是怎么回事，我们整理一下。
+
+1. 如果有`output`，且`output`有值，此时直接使用`output`，不需要设置`source`
+2. 如果有`output`, 且`output`没有值，存在两种可能
+   1. `source`本身有值，但是`lint`之后没有值了，出现这种情况则必然是执行了修复程序导致的，而修复程序必然是存在错误或警告导致的，此时，我们设置`source`
+   2. `source`本身就没值，这种情况没有错误和警告，但是此时，设置`source`没有意义，因为优先选择`output`，所以不需要设置`source`
+
+可以看到，这个判断很有意思，它使得程序只在真正需要的情况下设置`source`，这是很有意义的，可以减少不必要的内存消耗。
+
+现在我们可能想到另一个问题：这里我们知道`output`是在`fixed`为`true`的情况下才会进行设置，那么如果没有`--fix`指令，是否`output`始终为空？
+
+这个问题很重要，因为如果`output`始终为空，`codeframe`格式化程序时怎么进行信息提示？它是需要展示源码的，在这个情况下，逻辑理论是可能存在`output`和`source`都为空的情况的：`output`始终为空，而没有警告和错误的话，那么`source`岂不是始终也是空？
 
 # `linter/linter.js`
 ## `linter.verifyAndFix`
