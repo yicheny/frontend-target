@@ -219,36 +219,6 @@ module.exports = {
 }
 ```
 
-### 源码中的定义
-```js
-/**
- * @typedef {Object} Environment
- * @property {Record<string, GlobalConf>} [globals] The definition of global variables.
- * @property {ParserOptions} [parserOptions] The parser options that will be enabled under this environment.
- */
-
-/**
- * @typedef {Object} Processor
- * @property {(text:string, filename:string) => Array<string | { text:string, filename:string }>} [preprocess] The function to extract code blocks.
- * @property {(messagesList:LintMessage[][], filename:string) => LintMessage[]} [postprocess] The function to merge messages.
- * @property {boolean} [supportsAutofix] If `true` then it means the processor supports autofix.
- */
-
-/**
- * @typedef {Object} LintMessage
- * @property {number|undefined} column The 1-based column number.
- * @property {number} [endColumn] The 1-based column number of the end location.
- * @property {number} [endLine] The 1-based line number of the end location.
- * @property {boolean} fatal If `true` then this is a fatal error.
- * @property {{range:[number,number], text:string}} [fix] Information for autofix.
- * @property {number|undefined} line The 1-based line number.
- * @property {string} message The error message.
- * @property {string|null} ruleId The ID of the rule which makes this message.
- * @property {0|1|2} severity The severity of this message.
- * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] Information for suggestions.
- */
-```
-
 ## `Rule`
 `Rule`是`eslint`的核心组成部分，对于源码的解析重点正是`Rule`
 
@@ -961,6 +931,7 @@ return {
 
 `results`就是校验之后的结果，这个不用说。
 
+### `calculateStatsPerRun(results)`
 我们看一下`calculateStatsPerRun(results)`，这个是用来进行数据统计的，我们看一下实现：
 ```js
 /**
@@ -1299,27 +1270,156 @@ if (cachedResult) {
 ## 放入缓存
 然后在开启缓存的情况下，会将这次结果放到缓存里，这样一次完整的文件迭代处理就完成了。
 
+接下来我们深入了解`verifyText`里做了什么。
+
 # `verifyText`
+## 参数
+我们先看一下`verifyText`接收的形参定义：
+```js
+{
+    text, //源码
+    cwd, //当前工作路径
+    filePath: providedFilePath, //文件路径
+    config, //配置
+    fix, //是否进行修复
+    allowInlineConfig, //是否从注释上获取配置
+    reportUnusedDisableDirectives, //是否报告未使用的`eslint-disable`注释
+    fileEnumerator, //文件迭代器
+    linter //linetr实例，用于校验代码
+}
+```
+
+然后我们看一下在`cliEngine.executeOnFiles`传递的实参：
+```js
+{
+    //根据文件路径读取信息
+    text: fs.readFileSync(filePath, "utf8"),
+    //文件迭代返回的信息
+    filePath,
+    //文件迭代返回的信息
+    config,
+    //其实就是process.cwd()，在CLIEngine#construtor里创建的，会放到options.cwd属性上，然后`options`会被存储到`internalSlotsMap`。在`cliEngine.executeOnFiles`里通过`internalSlotsMap`取出
+    cwd,
+    //通过--fix传递，默认false
+    fix,
+    //通过--inline-config传递，默认true
+    allowInlineConfig,
+    //通过--report-unused-disable-directives传递，默认0
+    reportUnusedDisableDirectives,
+    //文件迭代器
+    fileEnumerator,
+    //在CLIEngine#constructor里通过new Linter({ cwd: options.cwd })创建，存储在internalSlotsMap里
+    linter
+}
+```
+
+现在会过来看`verifyText`的内容：
 ```js
 function verifyText({...}) {
-    //处理path
-    const filePath = providedFilePath || "<text>";
-    const filePathToVerify = filePath === "<text>" ? path.join(cwd, filePath) : filePath;//保证是绝对路径
+    const filePath = providedFilePath || "<text>";//如果未定义，则默认是"<text>"
+
+    //如果未定义，则设置默认路径【绝对路径】
+    //类似 F:\my-2021\example-my\node-test\path\<text> 这样
+    const filePathToVerify = filePath === "<text>" ? path.join(cwd, filePath) : filePath;
 
     const { fixed, messages, output } = linter.verifyAndFix(...);
 
-    // 调整结果
     const result = {...};
+
     if (fixed) result.output = output;
+    
     if (/*如果有错误且无输出*/) result.source = text;
 
     return result;
 }
 ```
 
+流程示意图：
+
 ![verifyText](https://pic.imgdb.cn/item/61454f8f2ab3f51d91fd4a75.jpg)
 
-接下来我们看一下`linter.verifyAndFix`这个方法
+## 路径处理
+在最开始声明`filePath`变量，`providedFilePath`就是从外面接收的`filePath`，如果存在直接使用，如果不存在，则默认设置为`"<text>"`。
+
+这里声明的变量`filePath`就两个地方用到：
+1. 声明`filePathToVerify`的时候
+2. 返回值`result`有`filePath`这个属性
+
+在`filePath`之后是`filePathToVerify`这个变量，如果外面接收的参数`filePath`存在，那么直接设置，否则得到一个默认的绝对路径。
+
+## *`linter.verifyAndFix`
+顺着往下，`filePathToVerify`会作为参数传递给`linter.verifyAndFix`
+
+`linter.verifyAndFix`这个是负责校验和修复的核心方法，后面会详细说明
+
+## 创建`result`
+然后是创建`result`用于返回，它会使用到`filePath`和`linter.verifyAndFix`返回的值。
+
+```js
+const result = {
+        filePath,
+        messages,
+        ...calculateStatsPerFile(messages)
+    };
+```
+`filePath`上面已经说过了，没什么好说的
+
+`messages`是`linter.verifyAndFix`的返回值，是`LintMessage[]`类型，这个应该已经提过很多遍了，这里特别说明下。
+
+### `LintMessage`
+```js
+/**
+ * @typedef {Object} LintMessage
+ * @property {number|undefined} column 从 1 开始的列号。
+ * @property {number} [endColumn] 结束位置的列号【从 1 开始】
+ * @property {number|undefined} line 从 1 开始的行号。
+ * @property {number} [endLine] 结束位置的行号【从 1 开始】
+ * @property {boolean} fatal  是否是致命错误
+ * @property {{range:[number,number], text:string}} [fix] 自动修复信息
+ * @property {string} message 错误信息
+ * @property {string|null} ruleId 生成这个消息的规则Id
+ * @property {0|1|2} severity 消息的严重级别
+ * @property {Array<{desc?: string, messageId?: string, fix: {range: [number, number], text: string}}>} [suggestions] 建议信息
+ */
+ ```
+ 如果以后提到`LintMessage`类型，看看源码里的定义，这个能背下来就最好了。
+
+### `calculateStatsPerFile`
+然后是`calculateStatsPerFile`方法，这里不知道你是否想起来一个名字很类似的方法`calculateStatsPerRun`，这个方法是在`cliEngine.executeOnFiles`返回值里使用到的。
+
+从名字就可以看出很多东西，`calculateStatsPerFile`是计算每个文件的统计数据，而`calculateStatsPerRun`是每次运行计算统计，实际上`caculateStatsPerRun`就是将每个文件的统计数据叠加而已，代码就是这么做的（上面已经展示了代码，这里不重复展示了）
+
+然后现在我们看下`calculateStatsPerFile`的实现
+```js
+function calculateStatsPerFile(messages) {
+    return messages.reduce((stat, message) => {
+        if (message.fatal || message.severity === 2) { 
+            stat.errorCount++; 
+            if (message.fatal) {
+                stat.fatalErrorCount++;
+            }
+            if (message.fix) {
+                stat.fixableErrorCount++;
+            }
+        } else {
+            stat.warningCount++;
+            if (message.fix) {
+                stat.fixableWarningCount++;
+            }
+        }
+        return stat;
+    }, {
+        errorCount: 0,
+        fatalErrorCount: 0,
+        warningCount: 0,
+        fixableErrorCount: 0,
+        fixableWarningCount: 0
+    });
+}
+```
+这个逻辑还是比较简单，不逐步说明了，就是根据`message`循环叠加统计，如果对`message`属性不熟悉的，可以回到上面看看`LintMessage`的定义。
+
+返回值和`caculateStatsPerRun`的返回值类型是一样的，也不再说明了。
 
 # `linter/linter.js`
 ## `linter.verifyAndFix`
