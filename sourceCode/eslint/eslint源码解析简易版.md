@@ -687,7 +687,7 @@ eslint --fix --debug src test/t.js
 
 还有一点问题，这里变量名叫做`files`并不是很合适，叫做`patterns`或者`globPatterns`可能会更合适，在接下来我们会知道`lintFiles`的定义的形参的名字就是`patterns`。
 
-为什么这里说`patterns`更合适，因为这里接受的是`glob patterns`，这种模式使用通配符指定文件集合，类似正则表达式，但更加简单。详情可以见(wiki-glob)[https://en.wikipedia.org/wiki/Glob_(programming)]
+为什么这里说`patterns`更合适，因为这里接受的是`glob patterns`，这种模式使用通配符指定文件集合，类似正则表达式，但更加简单。详情可以见[wiki-glob](https://en.wikipedia.org/wiki/Glob_(programming))
 
 稍微了解下`glob patterns`的概念，对于下面的代码理解会很有帮助，因为会多次提到`glob patterns`。
 
@@ -1075,7 +1075,7 @@ _iterateFiles(pattern) {
 
 这里函数名取得很好，我们只看名字就知道作用了，而且也极易看出每个函数的不同点，`Eslint`里很多名字起的都简明易懂，只看名字就知道作用了，很值得借鉴。
 
-### `FileEntry`
+#### `FileEntry`
 现在会过来过来，看一下它返回什么，返回`IterableIterator<FileEntry>`，这是一个迭代器，每次迭代返回`FileEntry`类型的值，让我们看一下`FileEntry`的类型定义：
 ```js
 /**
@@ -1103,6 +1103,35 @@ _iterateFiles(pattern) {
 而`_iterateFilesWithDirectory`和`_iterateFilesWithGlob`底层实现都是`_iterateFilesRecursive`，这个方法它迭代的`flag`可能是`'NONE'`或`'IGNORED_SILENTLY'`
 
 总结一下，就是如果`pattern`是文件路径则会参与迭代，但是会直接返回并生成警告，不会参与校验；否则直接忽略不参与迭代。
+
+#### `_iterateFilesWithFile`
+三种迭代方法我们先从`_iterateFilesWithFile`开始进行了解，原因是这个方法最简单，可以较容易了解和掌握。在此基础之上，学习`_iterateFilesWithDirectory`、`_iterateFilesWidthDirectory`会更容易。
+
+```js
+/**
+* Iterate a file which is matched by a given path.
+* @param {string} filePath The path to the target file.
+* @returns {IterableIterator<FileEntry>} The found files.
+* @private
+*/
+_iterateFilesWithFile(filePath) {
+    debug(`File: ${filePath}`);
+
+    const { configArrayFactory } = internalSlotsMap.get(this);
+    const config = configArrayFactory.getConfigArrayForFile(filePath);
+    const ignored = this._isIgnoredFile(filePath, { config, direct: true });
+    const flag = ignored ? IGNORED : NONE;
+
+    return [{ config, filePath, flag }];
+}
+```
+这里接收的`filePath`是在外面转换好的文件绝对路径，并且已经进行验证此文件存在，且为`file`类型。
+
+然后是代码部分，`debug`是一个用于调试的库，不再说明。
+
+然后是从`file-enumerator#inetrnalSlotsMap`中取出`configArrayFactory`，再通过`configArrayFactory.getConfigArrayForFile(filePath)`得到`config`
+
+关于`configArrayFactory`，发现相关内容太多，我放到下面的专题部分了。
 
 ### 返回值
 然后我们看`_iterateFiles`获取数据进行的操作：
@@ -1465,14 +1494,26 @@ const sourceCode = parentResult.output ? parentResult.output : parentResult.sour
 
 这个问题很重要，因为如果`output`始终为空，`codeframe`格式化程序时怎么进行信息提示？它是需要展示源码的，在这个情况下，逻辑理论是可能存在`output`和`source`都为空的情况的：`output`始终为空，而没有警告和错误的话，那么`source`岂不是始终也是空？
 
-# `linter/linter.js`
-## `linter.verifyAndFix`
+是的，是这样的。而且，这是非常合理的，因为仔细想一下，如果这里没有任何错误或警告，那就是不需要进行修复的，同时它也是不需要进行提示的，因为没有错误和警告，要提示什么？那么此时，自然是不需要提供`source`或`output`，所以两个都为空是很合理的。
+
+有一个关键点需要注意：什么时候`fixed`会为`true`？`option.fix`首先需要是`true`，这是前提条件。其次，即使开启了修复，如果没有可修复的内容，`fixed`依旧会是`false`（这个在后面的`SourceCodeFixer.applyFixes`代码里可以看到）
+
+在了解`fixed`的值之后，我们对这里的代码逻辑就很清晰了
+1. 如果有可修复的内容，且已修复，则设置`output`（注意，修复后即使存在错误或警告，也只设置`output`）
+2. 如果修复失败或未进行修复，且存在警告或错误，则设置`source`
+3. 除此之外，如果没有错误或警告，两个都不需要设置
+
+最后是返回`result`，没什么好说的。
+
+# `linter.verifyAndFix`
 ```js
 verifyAndFix(text, config, options) {
-    //循环修复文件
+    //准备需要使用的数据
+
+    //循环校验及修复文件
     do{...}while{...}
 
-    // 如果文件已修复，则生成LintMessage[]信息并赋值到message属性上【这里最重要的作用还是保证信息是最新的】
+    // 如果文件已修复，将修复后的结果赋值到message属性上【这里最重要的作用还是保证信息是最新的】
     if (fixedResult.fixed) fixedResult.messages = this.verify(currentText, config, options);
 
     // 更新结果
@@ -1482,11 +1523,15 @@ verifyAndFix(text, config, options) {
     return fixedResult;
 }
 ```
-这里比较重要的是循环修复和生成`LintMessage[]`信息这两个部分。
+
+流程示意图：
 
 ![linter.verifyAndFix](https://pic.imgdb.cn/item/614552772ab3f51d91010fd2.jpg)
 
-我们先看一下循环修复文件的代码
+## 参数
+从参数开始了解，有三个参数`text, config, options`
+
+`text`是从文件中读取的源码，上面已经说过了。
 
 ### 循环修复文件
 ```js
@@ -2025,11 +2070,102 @@ constructor(providedOptions) {
 
 ![lint核心处理2](https://pic.imgdb.cn/item/6139832244eaada7395f19ea.jpg)
 
-# 专题：`@eslint/eslint`
-## `CascadingConfigArrayFactory`
-职责：处理配置文件的级联。
+# 专题：`configArrayFactory`
+这个方法在本文第一次出现是在`fileEnumerator._iterateFilesWithFile`里，最好阅读完前置部分再看专题。
 
-描述：这个类提供枚举每个文件的功能，这些文件与给定的`glob`模式和配置匹配
+首先需要了解到的是，这个`configArrayFactory`是什么时候创建的？
+
+1. 在`cli.execute`里，会初始化创建`Eslint`实例
+1. 在`Eslint`初始化时，会初始化创建`CLIEngine`实例
+1. 在`CLIEngine`初始化时，会初始化创建`configArrayFactory`
+
+那么`configArrayFactory`是怎么传递给`file-enumerator#internalSlotsMap`的？
+
+答案是创建`configArrayFactory`之后，初始化声明`FileEnumerator`类时会将`configArrayFactory`作为参数传递，`FileEnumerator`在初始化时会将`configArrayFactory`存储到`file-enumerator#interalSlotsMap`。
+
+然后，`configArrayFactory`是怎么进行初始化的？代码如下：
+```js
+const configArrayFactory = new CascadingConfigArrayFactory(...);
+```
+
+这里我们看到`configArrayFactory`是通过`CascadingConfigArrayFactory`方法进行初始化的。
+
+## 参数
+我们逐一解读传递给`CascadingConfigArrayFactory`参数，首先这个类来自`@eslint/eslintrc`这个库，这个库是从`eslint`中提炼出来，专门处理级联配置的，为什么要进行提炼的，因为官方预期有一个新的配置方案，准备取代原来的方案。
+
+`@eslint/eslintrc`是替代过程中产生的，现在我们对于`CascadingConfigArrayFactory`的代码分析也是基于`@eslint/eslintrc`这个库，而非`eslint`。
+
+### 形参定义
+我们先看这个类的形参定义：
+```js
+/**
+ * @typedef {Object} CascadingConfigArrayFactoryOptions
+ * @property {Map<string,Plugin>} [additionalPluginPool] 附加plugins的Map
+ * @property {ConfigData} [baseConfig] `baseConfig` 选项的配置。
+ * @property {ConfigData} [cliConfig] CLI 选项的配置(`--env`, `--global`, `--ignore-pattern`, `--parser`, `--parser-options`, `--plugin`, and `--rule`). CLI 选项会覆盖配置文件中的设置。
+ * @property {string} [cwd] 开始查找的基本目录。
+ * @property {string} [ignorePath] `.eslintignore` 的替代文件的路径。
+ * @property {string[]} [rulePaths] `--rulesdir` 选项的值。
+ * @property {string} [specificConfigPath] `--config` 选项的值。
+ * @property {boolean} [useEslintrc] 是否加载配置文件。
+ * @property {Function} loadRules 用于加载规则的函数。
+ * @property {Map<string,Rule>} builtInRules ESLint 内置的规则。
+ * @property {Object} [resolver=ModuleResolver] 模块解析器对象。
+ * @property {string} eslintAllPath eslint:all 定义的路径。
+ * @property {string} eslintRecommendedPath eslint:recommended 定义的路径。
+ */
+
+/**
+* Initialize this enumerator.
+* @param {CascadingConfigArrayFactoryOptions} options The options.
+*/
+constructor({
+    additionalPluginPool = new Map(),
+    baseConfig: baseConfigData = null,
+    cliConfig: cliConfigData = null,
+    cwd = process.cwd(),
+    ignorePath,
+
+    //应该解析plugins的文件夹，默认为 CWD
+    resolvePluginsRelativeTo,
+
+    rulePaths = [],
+    specificConfigPath = null, 
+    useEslintrc = true, 
+    builtInRules = new Map(),
+    loadRules,
+    resolver,
+    eslintRecommendedPath,
+    eslintAllPath
+} = {})
+```
+如果不清楚相关命令的作用，请翻阅官方文档
+
+### 实参传递
+```js
+{
+    //new Map()
+    additionalPluginPool, 
+    //默认为null
+    baseConfig: options.baseConfig || null, 
+    //
+    cliConfig: createConfigDataFromOptions(options),
+    //process.cwd()
+    cwd: options.cwd, 
+    //默认void 0
+    ignorePath: options.ignorePath, 
+    //默认为null
+    resolvePluginsRelativeTo: options.resolvePluginsRelativeTo,
+    //默认[]
+    rulePaths: options.rulePaths,
+    specificConfigPath: options.configFile,
+    useEslintrc: options.useEslintrc,
+    builtInRules,
+    loadRules,
+    eslintRecommendedPath: path.resolve(__dirname, "../../conf/eslint-recommended.js"),
+    eslintAllPath: path.resolve(__dirname, "../../conf/eslint-all.js")
+}
+```
 
 # 豆知识
 ## `Shebang`
