@@ -1,0 +1,80 @@
+import { useMemo, useState, useEffect } from 'react'
+import { Tab, TabItem } from 'rootnet-ui'
+import { useRivalOptions, useTargetOptions, useTradingBookOptionsEditPermission, useContractSwapList } from '../../../common/options'
+import Position from './position'
+import Contract from './contract'
+import { useLocation } from 'react-router-dom'
+import { usePathSearch } from '../../../common/hooks'
+import { useGet } from 'rootnet-biz/es/hooks'
+import _ from 'lodash'
+import { curryGlobalConstOptions } from '../../../services/hooks'
+
+function Page() {
+  const ReportComponent = useModeInfo()
+  const selectOption = useFetchSelectOption()
+
+  return <ReportComponent selectOption={selectOption} />
+}
+
+export default Page
+
+function useModeInfo() {
+  const { pathname } = useLocation()
+  const routerParma = usePathSearch() // 券池余量统计页，调转到当前页携带的参数
+
+  return useMemo(() => {
+    const PageMode = {
+      daytime: (props) => <ValuationResult {...props} pageMode='daytime' />,
+      reckoning: (props) => <ValuationResult {...props} pageMode='reckoning' routerParma={routerParma} />,
+    }
+
+    if (pathname === '/swap/valuation-result') return PageMode['daytime']
+    return PageMode['reckoning']
+  }, [pathname, routerParma])
+}
+
+function ValuationResult({ pageMode, routerParma }) {
+  const selectOption = useFetchSelectOption(pageMode)
+  const [active, setActive] = useState()
+  return (
+    <div className='tab-wrapper x flex-y fill'>
+      <Tab active={active} onChange={setActive}>
+        <TabItem header='持仓价值'>
+          <Position selectOption={selectOption} pageMode={pageMode} routerParma={routerParma} />
+        </TabItem>
+        <TabItem header='合约价值'>
+          <Contract selectOption={selectOption} pageMode={pageMode} />
+        </TabItem>
+      </Tab>
+    </div>
+  )
+}
+
+const useSwappaymentType = curryGlobalConstOptions('swappaymentType')
+
+function useFetchSelectOption() {
+  const counterParty = useRivalOptions()
+  const underlying = useTargetOptions()
+  const tradingBook = useTradingBookOptionsEditPermission()
+  const contractIdList = useContractSwapList()
+  const swappaymentType = useSwappaymentType()
+
+  // TODO 这里...global是怎么回事？ global在浏览器环境是window，不能这么传递！
+  return { contractIdList, contractLimit: useContractLimit(), ...global, counterParty, underlying, tradingBook, swappaymentType }
+}
+
+function useContractLimit() {
+  const { data, doFetch } = useGet()
+
+  useEffect(() => {
+    doFetch('contract/swap/queryContractList?contractStatusList=0,1,2,9')
+  }, [doFetch])
+
+  return useMemo(() => {
+    return _.map(data, (item) => ({
+      text: `${item.contractId}-${item.contractName}`,
+      value: item.contractId,
+      ...item,
+    }))
+  }, [data])
+}
