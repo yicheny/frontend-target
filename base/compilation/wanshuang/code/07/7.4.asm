@@ -3,7 +3,7 @@ assume cs:codesg,ds:datasg
 
 datasg segment
     db 'BaSiC'          ;小写转大写
-    db 'iNfOrMaTiOn'    ;大写转小写
+    db 'iNfOrMaTiOn'    ;大写转小写【只处理前5位】
 datasg ends
 
 
@@ -23,6 +23,7 @@ codesg segment
 
             mov bx,5
 
+            mov cx,5
         s0: mov al,[bx]
             or al,0010000B
             mov [bx],al
@@ -31,6 +32,7 @@ codesg segment
 
             mov ax 4c00H
             int 21H
+
 codesg ends
 
 
