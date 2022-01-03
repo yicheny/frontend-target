@@ -62,7 +62,7 @@ module.exports = {
     },
     rules:{//开启规则，决定错误级别
         eqeqeq:2,
-    }
+    },
     settings:{//共享设置，将被提供给每一个被执行的规则
         "sharedData":"hello"
     },
