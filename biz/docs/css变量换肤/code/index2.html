@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CSS变量换肤-attribute</title>
+</head>
+<style>
+  [data-theme='default']{
+    --main-bg-color:red;
+  }
+
+  [data-theme='dark']{
+    --main-bg-color:green;
+  }
+
+  .box{
+    width:100px;
+    height:100px;
+    background: var(--main-bg-color);
+    color:#fff;
+  }
+</style>
+<body>
+<div class="box">box</div>
+<button onclick="setColor('default')">默认-红</button>
+<button onclick="setColor('dark')">暗色-绿</button>
+</body>
+<script>
+  //需要调整循环递归处理每个元素的data-theme，不是个好方案
+  setColor('default')
+
+  function setColor(theme){
+    document.querySelector('.box').setAttribute("data-theme",theme)
+  }
+</script>
+</html>

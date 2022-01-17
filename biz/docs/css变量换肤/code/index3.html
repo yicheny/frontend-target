@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CSS变量换肤-style</title>
+</head>
+<style>
+    :root{
+        --main-bg-color:null;
+        --main-text-color: null;
+    }
+    .box {
+        width: 100px;
+        height: 100px;
+        background: var(--main-bg-color);
+        color: var(--main-text-color);
+    }
+</style>
+<body>
+<div class="box">box</div>
+<button onclick="setDefaultTheme()">默认</button>
+<button onclick="setDarkTheme()">明亮</button>
+</body>
+<script>
+    setDefaultTheme();
+
+    function setDefaultTheme() {
+        const styleProps = {
+            '--main-bg-color': '#dfdfdf',
+            '--main-text-color': '#4f4f4f'
+        }
+        setTheme(styleProps)
+    }
+
+    function setDarkTheme() {
+        const styleProps = {
+            '--main-bg-color': 'yellowgreen',
+            '--main-text-color': '#fff'
+        }
+        setTheme(styleProps)
+    }
+
+    function setTheme(options) {
+        Object.entries(options).forEach(([key, value]) => {
+            setProp(key, value);
+        })
+
+        function setProp(k, v) {
+            document.body.style.setProperty(k, v)
+        }
+    }
+</script>
+</html>

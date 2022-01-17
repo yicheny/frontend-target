@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CSS变量换肤-style</title>
+</head>
+<style>
+    :root{
+        --main-bg-color:green;
+    }
+
+    .box{
+        width:100px;
+        height:100px;
+        background: var(--main-bg-color);
+        color:#fff;
+    }
+</style>
+<body>
+    <div class="box">box</div>
+    <button onclick="setColor('red')">红色</button>
+    <button onclick="setColor('green')">绿色</button>
+    <button onclick="setColor('blue')">蓝色</button>
+</body>
+<script>
+    function setColor(color){
+        // console.log('color',color);
+        document.body.style.setProperty("--main-bg-color",color)
+    }
+</script>
+</html>
