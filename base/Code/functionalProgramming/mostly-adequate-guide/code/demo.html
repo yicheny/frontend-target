@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo</title>
+</head>
+<body>
+    
+</body>
+</html>
+<script type='text/javascript' src='https://cdn.jsdelivr.net/npm/lodash@4.17.20/lodash.min.js'></script>
+<script type='text/javascript' src='./utils.js'></script>
+<script type='text/javascript' src='./Maybe.js'></script>
+<script>    
+//  safeProp :: Key -> {Key: a} -> Maybe a
+var safeProp = _.curry(function(prop,o){
+    return Maybe.of(o[prop])
+})
+
+//  safeHead :: [a] -> Maybe a
+var safeHead = safeProp(0);
+
+//  firstAddressStreet :: User -> Maybe (Maybe (Maybe Street) )
+var firstAddressStreet = compose(
+  map(map(safeProp('street'))), map(safeHead), safeProp('addresses')
+);
+
+var mockData = {addresses: [{street: {name: 'Mulburry', number: 8402}, postcode: "WC2N" }]};
+console.log(firstAddressStreet(mockData));
+// Maybe(Maybe(Maybe({name: 'Mulburry', number: 8402})))
+
+console.log(firstAddressStreet(mockData).__value.__value.__value)
+
+console.log(firstAddressStreet(mockData).join().join().join())
+
+var firstAddressStreet = compose(
+    join,map(safeProp('street')),join,map(safeHead), safeProp('addresses')
+);
+firstAddressStreet(mockData).map(console.log);
+
+var firstAddressStreet = compose(
+    chain(safeProp('street')),chain(safeHead), safeProp('addresses')
+);
+firstAddressStreet(mockData).map(console.log);
+</script>

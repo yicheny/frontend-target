@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maybe</title>
+</head>
+<body>
+    
+</body>
+</html>
+<script type='text/javascript' src='https://cdn.jsdelivr.net/npm/lodash@4.17.20/lodash.min.js'></script>
+<script type='text/javascript' src='./utils.js'></script>
+<script type='text/javascript' src='./Maybe.js'></script>
+<script>
+//Maybe.prototype.map测试
+var res = Maybe.of({ name: "Boris" }).map(prop("age")).map(add(10));
+console.log(res);
+var res = Maybe.of({ name: "Dinah", age: 14 }).map(prop("age")).map(add(10));
+console.log(res);
+
+
+//map 符合pointfree模式
+ var ageAddTen = compose(map(add(10)),map(prop('age')));
+console.log(ageAddTen(Maybe.of({ name: "Boris" })));
+console.log(ageAddTen(Maybe.of({ name: "Dinah", age: 14 })))
+
+
+//null中断程序测试
+//  withdraw :: Number -> Account -> Maybe(Account)
+var withdraw = _.curry(function(amount, account) {
+  return account.balance >= amount ?
+    Maybe.of({balance: account.balance - amount}) :
+    Maybe.of(null);
+});
+
+var getBalance = x => x.balance;
+var updateLedger = x => `账户余额为${x}元`
+var finishTransaction = compose(updateLedger,getBalance);
+
+//  getTwenty :: Account -> Maybe(String)
+var getTwenty = compose(map(finishTransaction), withdraw(20));
+console.log(getTwenty({ balance: 200.00}));
+console.log(getTwenty({ balance: 10.00}));
+
+
+//通过maybe制造逃生口
+var getTwenty = compose(maybe('程序出现问题啦！',finishTransaction),withdraw(20));
+console.log(getTwenty({ balance: 200.00}));
+console.log(getTwenty({ balance: 10.00}));
+</script>

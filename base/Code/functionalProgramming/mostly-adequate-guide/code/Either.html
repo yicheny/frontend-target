@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Either</title>
+</head>
+<body>
+    
+</body>
+</html>
+<script src="https://cdn.bootcss.com/moment.js/2.20.1/moment.min.js"></script>
+<script type='text/javascript' src='https://cdn.jsdelivr.net/npm/lodash@4.17.20/lodash.min.js'></script>
+<script type='text/javascript' src='./utils.js'></script>
+<script type='text/javascript' src='./Either.js'></script>
+<script>    
+//  getAge :: Date -> User -> Either(String, Number)
+var getAge = _.curry(function(now, user) {
+  var birthdate = moment(user.birthdate, 'YYYY-MM-DD');
+  if(!birthdate.isValid()) return Left.of("Birth date could not be parsed");
+  return Right.of(now.diff(birthdate, 'years'));
+});
+
+console.log(getAge(moment(), {birthdate: '2005-12-12'}));
+console.log(getAge(moment(), {birthdate: 'balloons!'}));
+
+
+// compose中使用
+//  fortune :: Number -> String
+var fortune  = compose(concat("If you survive, you will be "), add(1));
+
+//  zoltar :: User -> Either(String, _)
+var zoltar = compose(map(console.log), map(fortune), getAge(moment()));
+
+console.log(zoltar({birthdate: '2005-12-12'}));
+console.log(zoltar({birthdate: 'balloons!'}));
+
+
+//either
+//  zoltar :: User -> _
+var zoltar = compose(console.log, either(id, fortune), getAge(moment()));
+
+zoltar({birthdate: '2005-12-12'});
+zoltar({birthdate: 'balloons!'});
+</script>

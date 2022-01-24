@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IO</title>
+</head>
+<body>
+    <div id="myDiv">
+        <span>哈哈哈！</span>
+    </div>
+</body>
+</html>
+<script type='text/javascript' src='https://cdn.jsdelivr.net/npm/lodash@4.17.20/lodash.min.js'></script>
+<script type='text/javascript' src='./utils.js'></script>
+<script type='text/javascript' src='./IO.js'></script>
+<script>    
+const localStorage = Object.freeze({
+    name:'ylf',
+    age:'23',
+    height:170,
+})
+
+var getFromStorage =  function(key){
+  return IO.of(localStorage[key]);
+}
+// console.log(getFromStorage('name'))
+var getName = getFromStorage('name');
+console.log(getName.__value())
+
+
+//
+var io_window = new IO(function(){ return window; });
+
+var res = io_window.map(function(win){ return win.innerWidth });
+console.log(res.__value());
+
+var res = io_window.map(prop('location')).map(prop('href')).map(split('/'));
+console.log(res.__value());
+
+var $ = function(selector) {
+  return new IO(function(){ return document.querySelectorAll(selector); });
+}
+var res = $('#myDiv').map(head).map(function(div){ return div.innerHTML; })
+console.log(res.__value());
+</script>

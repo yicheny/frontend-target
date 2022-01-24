@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IOV2</title>
+</head>
+<body>
+</body>
+</html>
+<script type='text/javascript' src='https://cdn.jsdelivr.net/npm/lodash@4.17.20/lodash.min.js'></script>
+<script type='text/javascript' src='./utils.js'></script>
+<script type='text/javascript' src='./Maybe.js'></script>
+<script type='text/javascript' src='./IOV2.js'></script>
+<script>    
+//  url :: IO String
+var url = new IO(function() { return window.location.href; });
+var url = new IO(()=>'http://8080?name=ylf&height=170&sex=man');
+
+//  toPairs =  String -> [[String]]
+var toPairs = compose(map(split('=')), split('&'));
+
+//  params :: String -> [[String]]
+var params = compose(toPairs, last, split('?'));
+
+//  findParam :: String -> IO Maybe [String]
+var findParam = function(key) {
+  return map(compose(Maybe.of, filter(compose(eq(key), head)), params), url);
+};
+
+
+
+////// 非纯调用代码: main.js ///////
+
+// 调用 unsafePerformIO() 来运行它！
+var res = findParam("name").unsafePerformIO();
+console.log(res);
+</script>
