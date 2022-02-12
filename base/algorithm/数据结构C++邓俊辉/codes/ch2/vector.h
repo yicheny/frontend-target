@@ -1,12 +1,14 @@
 typedef int Rank;
 #define DEFAULT_CAPACITY 3 //默认初始容量
 
-template<typename T> class Vector {
+template<typename T>
+class Vector {
 protected:
     Rank _size;//规模【填充长度】
     int _capacity;//容量【申请长度】
-    T* _elem;//数据项
+    T *_elem;//数据项
 public:
+    //-----------构造函数-----------
     /*
      * @brief 构造函数
      * @param c 声明长度【容量】
@@ -18,16 +20,57 @@ public:
         for (_size = 0; _size < s; _elem[_size++] = v);
     }
 
-    /*
-     * @brief 通过下标获取元素
-     * @parma i 元素下标
-     * @return T 下标对应的元素
-     * */
-    T getByIndex(Rank i) const {
-        return _elem[i];
-    }
+    //数组整体复制
+    Vector(T const *A, Rank n) { copyFrom(A, 0, n); }
 
-    //只读访问接口
+    //数组区间复制
+    Vector(T const *A, Rank lo, Rank hi) { copyFrom(A, lo, hi); }
+
+    //向量整体复制
+    Vector(Vector<T> const &V) { copyFrom(V._elem, 0, V._size); }
+
+    //向量区间复制
+    Vector(Vector<T> const &V, Rank lo, Rank hi) { copyFrom(V._elem, lo, hi); }
+
+    void copyFrom(T const *A, Rank lo, Rank hi);
+
+    //-----------析构函数-----------
+    ~Vector() { delete[] _elem; }
+
+    //-----------只读访问接口-----------
     Rank size() const { return _size; }
+
+
+    //-----------可写访问接口-----------
+
+    //重载下标操作符，支持形如A[i]引用元素
+    T &operator[](Rank r) const { return _elem[r]; }
+    Vector<T> &operator= (Vector<T> const&);
+
+    //插入末尾
+    Rank insert(T const &e) { return insert(_size, e); }
+
+    Rank insert(Rank r, T const &e);
 };
 
+template<typename T>
+Rank Vector<T>::insert(Rank r, T const &e) {
+
+}
+
+template<typename T>
+void Vector<T>::copyFrom(T const *A, Rank lo, Rank hi) {
+    _elem = new T[_capacity = 2 * (hi - lo)];//以区间规模的2倍申请容量
+    _size = 0;//规模初始化
+
+    //A[lo,hi) => _elem[0,hi-lo)
+    while(lo < hi)
+        _elem[_size++] = A[lo++];
+}
+
+template<typename T>
+Vector<T>& Vector<T>::operator= (Vector<T> const& V){
+    if(_elem) delete [] _elem;//释放原有内容
+    copyFrom(V._elem,0,V.size());//整体复制
+    return *this;//返回当前对象引用，以便链式赋值
+}

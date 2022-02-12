@@ -4,21 +4,29 @@
 using std::cout;
 using std::endl;
 
-template <typename T>
-void print(const Vector<T> vec, int size){
-    for(size_t i=0;i<size;i++){
-        cout<< vec.getByIndex(i) << " ";
+template<typename T>
+void print(const Vector<T> vec) {
+    for (size_t i = 0; i < vec.size(); i++) {
+        cout << vec[i] << " ";
     }
     cout << endl;
 }
 
-template <typename T>
-void print(const T x){
+template<typename T>
+void print(const T x) {
     cout << x << endl;
 }
 
-int main(){
-    const Vector<int> vec(100,3,0);
-    print(vec,vec.size());
+int main() {
+    Vector<int> vec(100, 2, 0);
+    print(vec);
+
+    int arr[] = {21, 22, 23, 24, 25};
+    vec.copyFrom(arr, 1, 4);
+    print(vec);
+
+    Vector<int> vec2;
+    vec2 = vec;
+    print(vec2);
     return 0;
 }
