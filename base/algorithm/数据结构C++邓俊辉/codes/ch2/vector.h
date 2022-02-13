@@ -1,3 +1,5 @@
+#include <iostream>
+
 typedef int Rank;
 #define DEFAULT_CAPACITY 3 //默认初始容量
 
@@ -7,6 +9,8 @@ protected:
     Rank _size;//规模【填充长度】
     int _capacity;//容量【申请长度】
     T *_elem;//数据项
+    void expand();
+    void shrink();
 public:
     //-----------构造函数-----------
     /*
@@ -40,7 +44,6 @@ public:
     //-----------只读访问接口-----------
     Rank size() const { return _size; }
 
-
     //-----------可写访问接口-----------
 
     //重载下标操作符，支持形如A[i]引用元素
@@ -73,4 +76,30 @@ Vector<T>& Vector<T>::operator= (Vector<T> const& V){
     if(_elem) delete [] _elem;//释放原有内容
     copyFrom(V._elem,0,V.size());//整体复制
     return *this;//返回当前对象引用，以便链式赋值
+}
+
+template <typename T>
+void Vector<T>::expand() {
+    if(_size < _capacity) return ;
+    if(_capacity < DEFAULT_CAPACITY) _capacity = DEFAULT_CAPACITY;
+    T* oldElem = _elem;
+    _elem = new T[_capacity << 2];//容量加倍
+    for(int i = 0;i<_size;i++) _elem[i] = oldElem[i];
+    delete [] oldElem;
+}
+
+template <typename T>
+void Vector<T>::shrink() {
+    if(_capacity < DEFAULT_CAPACITY << 1) return ;
+    if(_size << 2 > _capacity) return ;//以25%为界
+    T* oldElem = _elem;
+    _elem = new T[_capacity >>= 1];//容量减半
+    for(int i=0;i<_size;i++) _elem[i] = oldElem[i];
+    delete [] oldElem;
+}
+
+template <typename T>
+void permute(Vector<T>& V){
+    for(int i=V.size();i>0;i--)
+        std::swap(V[i-1],V[std::rand() % i]);//V[i,0]与V[0,i)中某一元素随机交换
 }

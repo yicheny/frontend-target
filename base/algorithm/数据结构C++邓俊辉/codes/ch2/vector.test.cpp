@@ -21,12 +21,15 @@ int main() {
     Vector<int> vec(100, 2, 0);
     print(vec);
 
-    int arr[] = {21, 22, 23, 24, 25};
-    vec.copyFrom(arr, 1, 4);
+    int arr[] = {21, 22, 23, 24, 25,26,27,28};
+    vec.copyFrom(arr, 1, 6);
     print(vec);
 
     Vector<int> vec2;
     vec2 = vec;
     print(vec2);
+
+    permute(vec);
+    print(vec);
     return 0;
 }
