@@ -83,8 +83,7 @@ public:
     int uniquify();//有序去重
 
     //遍历
-    typedef void (*visit) (T&);//定义函数指针类型
-    void traverse(visit);//使用函数指针，只读或局部性修改
+    void traverse(void (*) (T&));//使用函数指针，只读或局部性修改
 
     template<typename VST>void traverse(VST&);//使用函数对象，可全局性修改
 };
@@ -180,7 +179,7 @@ int Vector<T>::deduplicate() {
 }
 
 template <typename T>
-void Vector<T>::traverse(visit) {
+void Vector<T>::traverse(void (*visit)(T &)) {
     for(int i = 0; i< _size;i++) visit(_elem[i]);
 }
 
