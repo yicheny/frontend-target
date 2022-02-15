@@ -29,7 +29,23 @@ int main() {
     vec2 = vec;
     print(vec2);
 
-    permute(vec);
+    vec.unsort();
     print(vec);
+
+    vec.insert(100);
+    vec.insert(101);
+    vec.insert(102);
+    vec.insert(102);
+    vec.insert(100);
+    vec.insert(102);
+    print(vec);
+
+    vec.remove(2,4);
+    print(vec);
+
+    vec.deduplicate();
+    print(vec);
+
+    vec.traverse(print);
     return 0;
 }
