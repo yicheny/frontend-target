@@ -1,4 +1,5 @@
 #include <iostream>
+#include "fib.h"
 
 typedef int Rank;
 #define DEFAULT_CAPACITY 3 //默认初始容量
@@ -48,9 +49,17 @@ public:
 
     bool empty() const { return !_size; }
 
+    int disordered() const;
+
+    //无序查找
     Rank find(T const &e) { return find(e, 0, _size); }
 
     Rank find(T const &e, Rank lo, Rank hi) const;
+
+    //有序查找
+    Rank search(T const &e, Rank lo, Rank hi) const;
+
+    Rank search(T const &e) const { return (0 >= _size) ? -1 : search(e, 0, _size); }
 
     //-----------可写访问接口-----------
 
@@ -83,9 +92,10 @@ public:
     int uniquify();//有序去重
 
     //遍历
-    void traverse(void (*) (T&));//使用函数指针，只读或局部性修改
+    void traverse(void (*)(T &));//使用函数指针，只读或局部性修改
 
-    template<typename VST>void traverse(VST&);//使用函数对象，可全局性修改
+    template<typename VST>
+    void traverse(VST &);//使用函数对象，可全局性修改
 };
 
 template<typename T>
@@ -169,22 +179,76 @@ T Vector<T>::remove(Rank r) {
     return e;
 }
 
+//无序唯一化 O(n^2)
 template<typename T>
 int Vector<T>::deduplicate() {
     int oldSize = _size;
     Rank i = 1;//从1开始查重
     while (i < _size)
-        find(_elem[i],0,i)<0 ? i++ : remove(i);
+        find(_elem[i], 0, i) < 0 ? i++ : remove(i);
     return oldSize - _size;
 }
 
-template <typename T>
+template<typename T>
 void Vector<T>::traverse(void (*visit)(T &)) {
-    for(int i = 0; i< _size;i++) visit(_elem[i]);
+    for (int i = 0; i < _size; i++) visit(_elem[i]);
 }
 
-template <typename T>
-template <typename VST>
-void Vector<T>::traverse(VST & visit) {
-    for(int i = 0; i< _size;i++) visit(_elem[i]);
+template<typename T>
+template<typename VST>
+void Vector<T>::traverse(VST &visit) {
+    for (int i = 0; i < _size; i++) visit(_elem[i]);
 }
+
+template<typename T>
+int Vector<T>::disordered() const {
+    int n = 0;
+    for (int i = 1; i < _size; i++)
+        if (_elem[i - 1] > _elem[i]) n++;//逆序则计数
+    return n;//仅当n==0时有序
+}
+
+//有序唯一化 O(n)
+template<typename T>
+int Vector<T>::uniquify() {
+    Rank i = 0, j = 0;
+    while (++j < _size) {
+        if (_elem[i] != _elem[j])//只移动没有的
+            _elem[++i] = _elem[j];//前移
+    }
+    _size = ++i;//直接截除尾部多余元素
+    shrink();
+    return j - i;//删除元素总数
+}
+
+//二分查找A O(1.5 * logn)
+//有多个命中时，此实现不保证返回秩最大者；
+template<typename T>
+static Rank binSearch(T *A, T const &e, Rank lo, Rank hi) {
+    while (1 < hi - lo) {
+        Rank mi = (lo + hi) >> 1;
+        (e < A[mi]) ? hi = mi : lo = mi;
+    }
+    return (e == A[lo]) ? lo : -1;
+}
+
+//fibnacci查找A O(1.44 * logn)
+template<typename T>
+static Rank fibSearch(T *A, T const &e, Rank lo, Rank hi) {
+    Fib fib(hi - lo);
+    while (lo < hi) {
+        while (hi - lo < fib.get()) fib.prev();
+        Rank mi = lo + fib.get() - 1;
+        if (e < A[mi]) hi = mi;
+        else if (A[mi] < e) lo = mi;
+        else return mi;
+    }
+    return -1;
+}
+
+template<typename T>
+Rank Vector<T>::search(const T &e, Rank lo, Rank hi) const {
+    //按50%概率随机使用二分算法或Fibonacci查找
+    return (rand() % 2) ? binSearch(_elem, e, lo, hi) : fibSearch(_elem, e, lo, hi);
+}
+

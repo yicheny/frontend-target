@@ -42,8 +42,8 @@ int main() {
     vec2 = vec;
     print(vec2);
 
-    vec.unsort();
-    print(vec);
+//    vec.unsort();
+//    print(vec);
 
     vec.insert(100);
     vec.insert(101);
@@ -65,5 +65,8 @@ int main() {
     Increase<int> increase;
     vec.traverse(increase);
     print(vec);
+
+    print(vec.search(102));
+    print(vec.search(10));
     return 0;
 }
