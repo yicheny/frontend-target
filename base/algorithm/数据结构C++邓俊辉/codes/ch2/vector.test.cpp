@@ -42,9 +42,6 @@ int main() {
     vec2 = vec;
     print(vec2);
 
-//    vec.unsort();
-//    print(vec);
-
     vec.insert(100);
     vec.insert(101);
     vec.insert(102);
@@ -68,5 +65,12 @@ int main() {
 
     print(vec.search(102));
     print(vec.search(10));
+    print(vec.search(200));
+
+    vec.unsort();
+    print(vec);
+
+    vec.sort();
+    print(vec);
     return 0;
 }

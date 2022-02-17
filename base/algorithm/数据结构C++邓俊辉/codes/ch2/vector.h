@@ -1,6 +1,8 @@
 #include <iostream>
 #include "fib.h"
 
+using namespace std;
+
 typedef int Rank;
 #define DEFAULT_CAPACITY 3 //默认初始容量
 
@@ -13,6 +15,33 @@ protected:
     void expand();
 
     void shrink();
+
+    //扫描交换
+    bool bubble(Rank lo, Rank hi);
+
+    //起泡排序
+    void bobbleSort(Rank lo, Rank hi);
+
+    //选取最大元素
+    Rank max(Rank lo, Rank hi);
+
+    //选择排序
+    void selectionSort(Rank lo, Rank hi);
+
+    //归并
+    void merge(Rank lo, Rank mi, Rank hi);
+
+    //归并排序
+    void mergeSort(Rank lo, Rank hi);
+
+    //轴点构造
+    Rank partition(Rank lo, Rank hi);
+
+    //快速排序
+    void quickSort(Rank lo, Rank hi);
+
+    //堆排序
+    void heapSort(Rank lo, Rank hi);
 
 public:
     //-----------构造函数-----------
@@ -82,7 +111,7 @@ public:
     T remove(Rank r);//删除秩为r的元素
     int remove(Rank lo, Rank hi);//删除区间[lo,hi)的元素
 
-    //排序
+    //排序--由小到大
     void sort(Rank lo, Rank hi);
 
     void sort() { sort(0, _size); }
@@ -221,26 +250,29 @@ int Vector<T>::uniquify() {
     return j - i;//删除元素总数
 }
 
-//二分查找A O(1.5 * logn)
-//有多个命中时，此实现不保证返回秩最大者；
+//二分查找c
 template<typename T>
 static Rank binSearch(T *A, T const &e, Rank lo, Rank hi) {
-    while (1 < hi - lo) {
+    //有效区间宽度缩短为0（而非1）时终止查找
+    // lo>=hi时停止，此时可确定 e>=A[mi]
+    //通过数学归纳法可证明：
+    //A[0,lo)的元素皆不大于e；A[hi,0)的元素皆大于e
+    while (lo < hi) {
         Rank mi = (lo + hi) >> 1;
-        (e < A[mi]) ? hi = mi : lo = mi;
+        (e < A[mi]) ? (hi = mi) : (lo = mi + 1);
     }
-    return (e == A[lo]) ? lo : -1;
+    return --lo;//A[lo-1)是不大于e的最后一个元素
 }
 
 //fibnacci查找A O(1.44 * logn)
 template<typename T>
 static Rank fibSearch(T *A, T const &e, Rank lo, Rank hi) {
-    Fib fib(hi - lo);
+    Fib fib(hi - lo);//当生成值大于等于n时停止
     while (lo < hi) {
         while (hi - lo < fib.get()) fib.prev();
         Rank mi = lo + fib.get() - 1;
         if (e < A[mi]) hi = mi;
-        else if (A[mi] < e) lo = mi;
+        else if (A[mi] < e) lo = mi + 1;
         else return mi;
     }
     return -1;
@@ -248,7 +280,78 @@ static Rank fibSearch(T *A, T const &e, Rank lo, Rank hi) {
 
 template<typename T>
 Rank Vector<T>::search(const T &e, Rank lo, Rank hi) const {
+    return fibSearch(_elem, e, lo, hi);
+//    return binSearch(_elem, e, lo, hi);
+
     //按50%概率随机使用二分算法或Fibonacci查找
-    return (rand() % 2) ? binSearch(_elem, e, lo, hi) : fibSearch(_elem, e, lo, hi);
+//    return (rand() % 2) ? binSearch(_elem, e, lo, hi) : fibSearch(_elem, e, lo, hi);
 }
 
+template<typename T>
+void Vector<T>::sort(Rank lo, Rank hi) {
+//    bobbleSort(lo,hi);
+    mergeSort(lo,hi);
+}
+
+//单次扫描
+template<typename T>
+bool Vector<T>::bubble(Rank lo, Rank hi) {
+    bool sorted = true;//整体有序标识
+    while (++lo < hi) {
+        if (_elem[lo - 1] > _elem[lo]) {
+            sorted = false;//标识还没有整体有序
+            swap(_elem[lo-1],_elem[lo]);
+        }
+    }
+    return sorted;//返回标识--决定之后是否继续扫描
+}
+
+//扫描排序
+template<typename T>
+void Vector<T>::bobbleSort(Rank lo, Rank hi) {
+    bool sorted = false;
+    while(!sorted){
+        sorted = bubble(lo,hi);
+    }
+}
+
+template<typename T>
+void Vector<T>::mergeSort(Rank lo, Rank hi) {
+    if(hi-lo<2) return ;//单区间自然有序
+    int mi = (lo+hi) >> 1;
+    //这里只是不断拆分因子，直至将其分解为单区间
+    mergeSort(lo,mi);
+    mergeSort(mi,hi);
+    //二路归并是其精髓
+    merge(lo,mi,hi);
+}
+
+//归并完成后得到完整的有序向量
+template<typename T>
+void Vector<T>::merge(Rank lo, Rank mi, Rank hi) {
+    //预期合并后 A[0,hi-lo)  = _elem[lo,hi)
+    //这里指针相当于定了一个起点
+    T* A = _elem + lo;
+
+
+    //lb为数组B长度
+    int lb = mi - lo;
+    //声明了规模为lb单位的内存
+    T* B = new T[lb];
+
+    //循环完成则 B[0,lb] = _elem[lo,mi)
+    for(Rank i=0;i<lb;B[i]=A[i++]);
+
+    //lc为数组C长度
+    int lc = hi - mi;
+    //预期 C[0,lc) = _elem[mi,hi-mi)
+    T* C = _elem + mi;
+
+    for(Rank i=0,j=0,k=0;(j<lb) || (k<lc);){
+        if((j<lb) && (!(k<lc) || (B[j] <= C[k]))) A[i++] = B[j++];
+        if((j<lc) && (!(j<lb) || (C[k] < B[j]))) A[i++] = C[k++];
+    }
+
+    //释放临时空间B
+    delete [] B;
+}
