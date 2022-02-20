@@ -1,3 +1,4 @@
+#include<typeinfo>
 #include <iostream>
 #include "fib.h"
 
@@ -290,7 +291,7 @@ Rank Vector<T>::search(const T &e, Rank lo, Rank hi) const {
 template<typename T>
 void Vector<T>::sort(Rank lo, Rank hi) {
 //    bobbleSort(lo,hi);
-    mergeSort(lo,hi);
+    mergeSort(lo, hi);
 }
 
 //单次扫描
@@ -300,7 +301,7 @@ bool Vector<T>::bubble(Rank lo, Rank hi) {
     while (++lo < hi) {
         if (_elem[lo - 1] > _elem[lo]) {
             sorted = false;//标识还没有整体有序
-            swap(_elem[lo-1],_elem[lo]);
+            swap(_elem[lo - 1], _elem[lo]);
         }
     }
     return sorted;//返回标识--决定之后是否继续扫描
@@ -310,20 +311,20 @@ bool Vector<T>::bubble(Rank lo, Rank hi) {
 template<typename T>
 void Vector<T>::bobbleSort(Rank lo, Rank hi) {
     bool sorted = false;
-    while(!sorted){
-        sorted = bubble(lo,hi);
+    while (!sorted) {
+        sorted = bubble(lo, hi);
     }
 }
 
 template<typename T>
 void Vector<T>::mergeSort(Rank lo, Rank hi) {
-    if(hi-lo<2) return ;//单区间自然有序
-    int mi = (lo+hi) >> 1;
+    if (hi - lo < 2) return;//单区间自然有序
+    int mi = (lo + hi) >> 1;
     //这里只是不断拆分因子，直至将其分解为单区间
-    mergeSort(lo,mi);
-    mergeSort(mi,hi);
+    mergeSort(lo, mi);
+    mergeSort(mi, hi);
     //二路归并是其精髓
-    merge(lo,mi,hi);
+    merge(lo, mi, hi);
 }
 
 //归并完成后得到完整的有序向量
@@ -331,27 +332,51 @@ template<typename T>
 void Vector<T>::merge(Rank lo, Rank mi, Rank hi) {
     //预期合并后 A[0,hi-lo)  = _elem[lo,hi)
     //这里指针相当于定了一个起点
-    T* A = _elem + lo;
-
+    T *A = _elem + lo;
 
     //lb为数组B长度
     int lb = mi - lo;
+
     //声明了规模为lb单位的内存
-    T* B = new T[lb];
+    T *B = new T[lb];
 
     //循环完成则 B[0,lb] = _elem[lo,mi)
-    for(Rank i=0;i<lb;B[i]=A[i++]);
+    for (Rank i = 0; i < lb;i++ ) B[i] = A[i];
+//    for (Rank i = 0; i < lb;B[i] = A[i++] ); //异常写法,会赋值成指针地址,待查明原因
 
     //lc为数组C长度
     int lc = hi - mi;
-    //预期 C[0,lc) = _elem[mi,hi-mi)
-    T* C = _elem + mi;
 
-    for(Rank i=0,j=0,k=0;(j<lb) || (k<lc);){
-        if((j<lb) && (!(k<lc) || (B[j] <= C[k]))) A[i++] = B[j++];
-        if((j<lc) && (!(j<lb) || (C[k] < B[j]))) A[i++] = C[k++];
+    //预期 C[0,lc) = _elem[mi,hi-mi)
+    T *C = _elem + mi;
+
+    //将B[j]和C[k]中比较小的一个放到A末尾
+    for (Rank i = 0, j = 0, k = 0; (j < lb) || (k < lc);) {
+//        if ((j < lb) && (!(k < lc) || (B[j] <= C[k]))) A[i++] = B[j++];
+//        if ((k < lc) && (!(j < lb) || (C[k] < B[j]))) A[i++] = C[k++];
+//
+
+        bool isLBRange = j < lb;
+        bool isLCRange = k < lc;
+
+        if(!isLBRange){
+            A[i++] = C[k++];
+            continue;
+        }
+
+        if(!isLCRange){
+            A[i++] = B[j++];
+            continue;
+        }
+
+
+        if (B[j] <= C[k]) {
+            A[i++] = B[j++];
+        } else {
+            A[i++] = C[k++];
+        }
     }
 
     //释放临时空间B
-    delete [] B;
+    delete[] B;
 }

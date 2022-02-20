@@ -70,6 +70,7 @@ int main() {
     vec.unsort();
     print(vec);
 
+//    vec.remove(0,2);
     vec.sort();
     print(vec);
     return 0;
