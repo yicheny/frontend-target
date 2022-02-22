@@ -54,10 +54,10 @@ public:
     //重载--支持按秩访问（效率低）
     T &operator[](Rank r) const;
 
-    //头节点位置
+    //首节点位置
     ListNodePosi(T)first() const { return header->succ; }
 
-    //尾节点位置
+    //末节点位置
     ListNodePosi(T)last() const { return trailer->pred; }
 
     //判断位置p是否合法
@@ -128,3 +128,21 @@ public:
     void traverse(VST&);
 
 };
+
+template <typename T>
+void List<T>::init() {
+    header = new ListNode<T>;
+    trailer = new ListNode<T>;
+    header->succ = trailer;
+    header->pred = NULL;
+    trailer->pred = header;
+    trailer->succ = NULL;
+    _size = 0;
+}
+
+template <typename T>
+T &List<T>::operator[](Rank r) const {
+    ListNodePosi(T) p = first();
+    while(0<r--) p = p->succ;
+    return p->data;
+}
