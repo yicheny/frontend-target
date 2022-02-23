@@ -18,10 +18,10 @@ protected:
     void copyNodes(ListNodePosi(T)p, int n);
 
     //归并
-    void merge(ListNodePosi(T)&, int, List<T> &, ListNodePosi(T), int);
+    void merge(ListNodePosi(T)&p, int n, List<T> &L, ListNodePosi(T)q, int m);
 
     //归并排序
-    void mergeSort(ListNodePosi(T)&, int);
+    void mergeSort(ListNodePosi(T)&p, int n);
 
     //选择排序
     void selectionSort(ListNodePosi(T)p, int n);
@@ -163,6 +163,7 @@ ListNodePosi(T)List<T>::find(T const &e, int n, ListNodePosi(T)p) const {
 }
 
 //目前的写法，即使失败也会传回位置，这要求调用者在外部再进行验证
+//e-插入元素、n-查找长度，p-起始位置
 template<typename T>
 ListNodePosi(T)List<T>::search(T const &e, int n, ListNodePosi(T)p) const {
     while (0 <= n--) {
@@ -295,14 +296,77 @@ void List<T>::traverse(VST &visit) {
 
 template<typename T>
 void List<T>::sort(ListNodePosi(T)p, int n) {
-
+//    insertionSort(p, n);
+//    selectionSort(p, n);
+    mergeSort(p, n);
 }
 
+//O(n^2)
 template<typename T>
 void List<T>::insertionSort(ListNodePosi(T)p, int n) {
     for (int r = 0; r < n; r++) {
+        //查找合适的位置，插入元素
         insertS(search(p->data, r, p), p->data);
+        //转向下一节点
         p = p->succ;
+        //删除原来的节点
         remove(p->pred);
     }
+}
+
+//O(n^2)
+template<typename T>
+void List<T>::selectionSort(ListNodePosi(T)p, int n) {
+    ListNodePosi(T)head = p->pred;
+    ListNodePosi(T)tail = p;
+    for (int i = 0; i < n; i++) tail = tail->succ;//此时待排序区间为(head,tail)
+    while (1 < n) { //区间为1时则无需选择
+        ListNodePosi(T)max = selectMax(head->succ, n);
+        insertP(tail, remove(max));
+        tail = tail->pred;
+        n--;
+    }
+}
+
+template<typename T>
+ListNodePosi(T)List<T>::selectMax(ListNodePosi(T)p, int n) {
+    ListNodePosi(T)max = p;//暂定最大节点为首节点p
+    for (ListNodePosi(T)cur = p; 1 < n; n--) {
+        T curData = (cur = cur->succ)->data;
+        T maxData = max->data;
+        if (curData > maxData) max = cur;
+    }
+    return max;
+}
+
+//当前列表自p起的n个元素，与列表L中自q起的m个元素归并
+template<typename T>
+void List<T>::merge(ListNodePosi(T)&p, int n, List<T> &L, ListNodePosi(T)q, int m) {
+    ListNodePosi(T)pp = p->pred;
+    while (0 < m) {//说明m区间还有待归并元素
+        if ((0 < n) && (p->data <= q->data)) {//n区间还有待归并元素，且v(p) 小于等于 v(q)
+            p = p->succ;//选择p后继作为下一个基准点
+            if (q == p) break; //起点和终点相等，则证明已经排序结束
+            n--;
+        } else {
+            //如果v(p) 大于 v(q)
+            //则将q插入p的后继
+            //将q后继作为基准点
+            insertP(p, L.remove((q = q->succ)->pred));
+            m--;
+        }
+    }
+    p = pp->succ;//将p还原至初始起点【此时列表已经是有序序列】
+}
+
+template<typename T>
+void List<T>::mergeSort(ListNodePosi(T)&p, int n) {
+    if (n < 2) return;
+    int m = n >> 1;
+    ListNodePosi(T)q = p;
+    for (int i = 0; i < m; i++) q = q->succ;
+    mergeSort(p, m);
+    mergeSort(q, n - m);
+    //p是起点，q是终点
+    merge(p, m, *this, q, n - m);
 }

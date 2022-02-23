@@ -35,7 +35,7 @@ ListNodePosi(T)ListNode<T>::insertAsPred(const T &e) {
 template <typename T>
 ListNodePosi(T)ListNode<T>::insertAsSucc(const T &e) {
     //向后插入元素
-    ListNodePosi(T) x = new ListNode(e,this.succ);
+    ListNodePosi(T) x = new ListNode(e,this,succ);
     //修改前驱、后继
     succ->pred = x;
     succ = x;
