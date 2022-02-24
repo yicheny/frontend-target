@@ -1,9 +1,10 @@
+#ifndef FRONTEND_TARGET_PRINT_H
+#define FRONTEND_TARGET_PRINT_H
+
 #include <iostream>
 #include <vector>
 
-using std::cout;
-using std::endl;
-using std::vector;
+using namespace std;
 
 template <typename T>
 void print(const T x){
@@ -26,3 +27,4 @@ void print(const vector<T> vec, size_t size){
     cout << endl;
 }
 
+#endif //FRONTEND_TARGET_PRINT_H

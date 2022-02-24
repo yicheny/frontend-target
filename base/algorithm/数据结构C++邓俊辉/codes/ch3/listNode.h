@@ -1,3 +1,6 @@
+#ifndef FRONTEND_TARGET_LISTNODE_H
+#define FRONTEND_TARGET_LISTNODE_H
+
 #include <iostream>
 
 typedef int Rank;
@@ -41,3 +44,6 @@ ListNodePosi(T)ListNode<T>::insertAsSucc(const T &e) {
     succ = x;
     return x;
 }
+
+#endif //FRONTEND_TARGET_LISTNODE_H
+

@@ -1,6 +1,9 @@
-#include<typeinfo>
+#ifndef FRONTEND_TARGET_VECTOR_H
+#define FRONTEND_TARGET_VECTOR_H
+
 #include <iostream>
 #include "fib.h"
+
 
 using namespace std;
 
@@ -380,3 +383,5 @@ void Vector<T>::merge(Rank lo, Rank mi, Rank hi) {
     //释放临时空间B
     delete[] B;
 }
+
+#endif //FRONTEND_TARGET_VECTOR_H
