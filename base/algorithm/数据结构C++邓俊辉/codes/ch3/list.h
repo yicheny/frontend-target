@@ -1,4 +1,8 @@
+#ifndef FRONTEND_TARGET_LIST_H
+#define FRONTEND_TARGET_LIST_H
+
 #include "listNode.h"
+
 
 template<typename T>
 class List {
@@ -370,3 +374,5 @@ void List<T>::mergeSort(ListNodePosi(T)&p, int n) {
     //p是起点，q是终点
     merge(p, m, *this, q, n - m);
 }
+
+#endif //FRONTEND_TARGET_LIST_H
